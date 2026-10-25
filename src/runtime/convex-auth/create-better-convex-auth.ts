@@ -38,7 +38,7 @@ import { createEmailCodeAddressLimitPlugin } from './email-code-limit'
 import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
-  createRevokeSessionsOnVerificationHooks,
+  createRevokeEarlierSessionsHooks,
 } from './identity-guards'
 import { requireMcpPrincipal, type BetterConvexMcpPrincipal } from './mcp-principal'
 import {
@@ -1324,9 +1324,11 @@ export function createBetterConvexAuthOwned<
         options.organization === false || options.organization === undefined
           ? null
           : organization({
-              // An unverified account (for example a squatter) must not accept an invitation.
-              requireEmailVerificationOnInvitation: true,
               ...options.organization,
+              // An unverified account (for example a squatter) must not accept an invitation.
+              // Only an explicit false opts out; a missing or undefined value keeps the rule.
+              requireEmailVerificationOnInvitation:
+                options.organization.requireEmailVerificationOnInvitation !== false,
               sendInvitationEmail: async (data) =>
                 deliver({
                   type: 'organization-invitation',
@@ -1451,7 +1453,7 @@ export function createBetterConvexAuthOwned<
                 return await beforeUserCreate?.(user)
               },
             },
-            ...createRevokeSessionsOnVerificationHooks(),
+            ...createRevokeEarlierSessionsHooks(),
           },
         },
         disabledPaths: [

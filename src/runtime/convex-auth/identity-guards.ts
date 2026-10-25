@@ -50,29 +50,32 @@ export function createIdentityGuardsPlugin(trustedProviders: readonly string[]):
 type UserHooks = NonNullable<NonNullable<BetterAuthOptions['databaseHooks']>['user']>
 
 /**
- * Proving an address ends every session that existed before the proof. A
- * squatter who registered the address with a password and signed in holds such
- * a session; the owner's later verification must not leave it alive. A session
- * that the verification itself creates (auto sign-in) is made after the update,
- * so it survives. The password stays: it may belong to the honest owner.
+ * Proving an address, or turning on two-factor, ends every session that existed
+ * before. A squatter who registered the address with a password and signed in
+ * holds such a session, and so does whoever signed in with a stolen password
+ * before the owner turned on two-factor. The session that the request itself
+ * creates (auto sign-in, or the rotated session after enabling two-factor) is
+ * made after the update, so it survives. The password stays: it may belong to
+ * the honest owner.
  *
- * The hook sees the new values, not the stored row, so verifying an address
- * that is already verified also ends sessions. That errs toward signing out;
- * reading the row first would need a wrapper around the auth adapter.
+ * The hook sees the new values, not the stored row, so setting a value that is
+ * already set also ends sessions. That errs toward signing out; reading the row
+ * first would need a wrapper around the auth adapter.
  */
-export function createRevokeSessionsOnVerificationHooks(): Pick<UserHooks, 'update'> {
-  // One verifying update per request: `before` marks the request, `after` revokes.
-  const verifying = new WeakSet<object>()
+export function createRevokeEarlierSessionsHooks(): Pick<UserHooks, 'update'> {
+  // One such update per request: `before` marks the request, `after` revokes.
+  const revoking = new WeakSet<object>()
   return {
     update: {
       before: async (data, context) => {
-        if (context && (data as { emailVerified?: unknown }).emailVerified === true) {
-          verifying.add(context)
+        const update = data as { emailVerified?: unknown; twoFactorEnabled?: unknown }
+        if (context && (update.emailVerified === true || update.twoFactorEnabled === true)) {
+          revoking.add(context)
         }
       },
       after: async (user, context) => {
         // Take the mark first, so it cannot outlive this update.
-        const marked = context ? verifying.delete(context) : false
+        const marked = context ? revoking.delete(context) : false
         if (!user || !context || !marked) return
         await context.context.internalAdapter.deleteUserSessions(user.id)
       },

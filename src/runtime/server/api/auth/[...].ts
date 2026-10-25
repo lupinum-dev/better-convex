@@ -1,7 +1,7 @@
 import { createError } from 'nuxt/server'
 
 import type { AuthProxyRequest } from '../../../devtools/types'
-import { getSessionCookieFlagViolation } from '../../../shared/auth-cookie'
+import { getAuthCookieFlagViolation } from '../../../shared/auth-cookie'
 import { normalizeClientIp, requireProxyIpSecret } from '../../../shared/client-ip'
 import {
   buildAuthProxyUnreachableMessage,
@@ -356,7 +356,11 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
 
     if (fixedAuthPath !== undefined && (requestUrl.search || requestUrl.hash)) {
       rejected('BCN_AUTH_PROXY_METADATA_QUERY_REJECTED', 400)
-      throw createError({ status: 400, message: 'Auth metadata does not accept a query' })
+      throw createError({
+        status: 400,
+        message: 'Auth metadata does not accept a query',
+        data: { code: 'BCN_AUTH_PROXY_METADATA_QUERY_REJECTED' },
+      })
     }
     const path =
       fixedAuthPath ??
@@ -523,7 +527,7 @@ export function createAuthProxyHandler(options: AuthProxyHandlerOptions = {}) {
             data: { code: 'BCN_AUTH_PROXY_COOKIE_DOMAIN_UNSUPPORTED' },
           })
         }
-        const violation = getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '')
+        const violation = getAuthCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '')
         if (violation) {
           throw createError({
             status: 502,

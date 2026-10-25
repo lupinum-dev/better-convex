@@ -200,7 +200,9 @@ function validatePagePath(value: unknown): void {
     !value.startsWith('/') ||
     value.startsWith('//') ||
     value.includes('?') ||
-    value.includes('#')
+    value.includes('#') ||
+    // Browsers read `/\host` like `//host`, an address on another site.
+    value.includes('\\')
   ) {
     invalidConfig()
   }

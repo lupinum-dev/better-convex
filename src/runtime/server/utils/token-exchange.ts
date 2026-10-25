@@ -1,5 +1,5 @@
 import { ConvexCallError } from '../../errors'
-import { getSessionCookieFlagViolation } from '../../shared/auth-cookie'
+import { getAuthCookieFlagViolation } from '../../shared/auth-cookie'
 import {
   deduplicateSetCookies,
   filterBetterAuthCookies,
@@ -157,7 +157,7 @@ function forwardSessionRenewal(event: ConvexServerEvent, setCookies: readonly st
     (cookie) =>
       isBetterAuthSetCookie(cookie) &&
       !hasSetCookieDomainAttribute(cookie) &&
-      getSessionCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '') === null,
+      getAuthCookieFlagViolation(cookie, getSetCookieName(cookie) ?? '') === null,
   )
   if (cookies.length === 0 || eventHeadersSent(event)) return
   for (const headers of eventResponseHeaderTargets(event)) {
