@@ -770,9 +770,9 @@ export const mutants: Mutant[] = [
     id: 'S13-escape-html',
     guards: 'S13',
     file: 'packages/functions/src/values.ts',
-    find: '[\\\\`*_[\\]()<>!#|~]',
-    replace: '[\\\\`*_[\\]()!#|~]',
-    kills: [`${F}/values.test.ts > inert markdown shows links and HTML as text`],
+    find: '[\\\\`*_[\\]()<>!#|~@]',
+    replace: '[\\\\`*_[\\]()!#|~@]',
+    kills: [`${F}/values.test.ts > inert markdown shows "[a](https://b) <img src=x>" as text`],
   },
   {
     id: 'S13-invisible',
