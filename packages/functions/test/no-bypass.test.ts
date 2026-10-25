@@ -1,6 +1,15 @@
 import { trusted } from '@lupinum/better-convex-functions'
 import { unguardedFunctions } from '@lupinum/better-convex-functions/test'
-import { httpActionGeneric, httpRouter, internalQueryGeneric, queryGeneric } from 'convex/server'
+import {
+  actionGeneric,
+  httpActionGeneric,
+  httpRouter,
+  internalActionGeneric,
+  internalMutationGeneric,
+  internalQueryGeneric,
+  mutationGeneric,
+  queryGeneric,
+} from 'convex/server'
 import { expect, test } from 'vitest'
 
 const raw = () => queryGeneric({ args: {}, handler: async () => null })
@@ -34,6 +43,12 @@ test('raw functions are found in any module, router routes included', async () =
     './convex.config.ts': load({}),
     './admin/leak.ts': load({ read: raw(), ok: trusted('Health check.', raw()) }),
     './admin/internal.ts': load({ rawRead: internalQueryGeneric({ handler: async () => null }) }),
+    './admin/writes.ts': load({
+      action: actionGeneric({ handler: async () => null }),
+      internalAction: internalActionGeneric({ handler: async () => null }),
+      internalWrite: internalMutationGeneric({ handler: async () => null }),
+      write: mutationGeneric({ handler: async () => null }),
+    }),
     './http.ts': load({ default: http }),
     // Convex skips these files, so the scan does too.
     './leaks.test.ts': load({ read: raw() }),
@@ -49,8 +64,30 @@ test('raw functions are found in any module, router routes included', async () =
     './legacy/_generated/leak.ts:read',
     './admin/leak.ts:read',
     './admin/internal.ts:rawRead',
+    './admin/writes.ts:action',
+    './admin/writes.ts:internalAction',
+    './admin/writes.ts:internalWrite',
+    './admin/writes.ts:write',
     './http.ts:GET /leak',
   ])
+})
+
+// Catches: a trusted prefix vouching for a route that only starts with the same letters.
+test('a trusted route prefix covers whole path segments', async () => {
+  const http = httpRouter()
+  for (const path of ['/api/auth', '/api/auth/session', '/api/authz-admin/users'])
+    http.route({ path, method: 'GET', handler: rawHttp() })
+  const modules = { ...app, './http.ts': load({ default: http }) }
+  for (const prefix of ['/api/auth', '/api/auth/'])
+    expect(
+      (await unguardedFunctions(modules, { trustedRoutes: { [prefix]: 'Auth library.' } })).filter(
+        (id) => id.startsWith('./http.ts:'),
+      ),
+    ).toEqual(
+      prefix === '/api/auth'
+        ? ['./http.ts:GET /api/authz-admin/users']
+        : ['./http.ts:GET /api/auth', './http.ts:GET /api/authz-admin/users'],
+    )
 })
 
 // Catches a no-bypass test that passes because its glob found nothing to check.

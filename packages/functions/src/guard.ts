@@ -123,8 +123,11 @@ export async function scanModules(
       async ([path, load]) => [path, (await load()) as Record<string, unknown>] as const,
     ),
   )
+  // A prefix covers whole path segments: '/api/auth' covers '/api/auth/session', not '/api/authz'.
   const trusted = (path: string) =>
-    Object.keys(options.trustedRoutes ?? {}).some((prefix) => path.startsWith(prefix))
+    Object.keys(options.trustedRoutes ?? {}).some(
+      (prefix) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`),
+    )
   // Every Convex function in the modules, by "module:export" or "module:METHOD /path".
   const functions = loaded.flatMap(([path, exports]) =>
     Object.entries(exports).flatMap(([name, value]): [string, ScannedFn][] => {
