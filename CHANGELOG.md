@@ -1,5 +1,58 @@
 # Changelog
 
+## 1.0.0-rc.7
+
+### Minor Changes
+
+- [#304](https://github.com/lupinum-dev/better-convex/pull/304) [`4bfa2d1`](https://github.com/lupinum-dev/better-convex/commit/4bfa2d1cb897fbeedb54bd4a67f7c03f8ddc2c72) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `blockedBy: 'server'` for a query that the server render did not load, so templates can show a skeleton instead of an empty result.
+  
+  With `server: false`, or without a Convex URL or Convex session token on the server, the server render and hydration report `status: 'idle'` with `blockedBy: 'server'`; before, they reported `blockedBy: null`. The value becomes `null` when the browser starts the query.
+  The docs add a "Prefill a form from a query" recipe and show the last value with a notice after a live query error.
+  Migration: an exhaustive `switch` on `blockedBy` (`ConvexQueryBlockedBy`) must handle `'server'`.
+
+- [#296](https://github.com/lupinum-dev/better-convex/pull/296) [`c1ced1c`](https://github.com/lupinum-dev/better-convex/commit/c1ced1ca1cdbfaee08a6f7d9c040a95efea158c4) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add the `oidc` option to `createBetterConvexAuth` to sign in through your company's OpenID Connect identity provider, such as Keycloak.
+  
+  A user who signs in through the identity provider, or links it, then signs in only through it.
+  App sessions end through back-channel logout, and at the next Convex or MCP token when the provider refuses the refresh token.
+  `oidc.onSignIn` receives the verified ID-token claims at each sign-in, for roles and access checks; `oidc.scopes` adds scopes such as `offline_access`.
+  Add `auth.getOidcAccessToken(ctx)` for Convex actions that call your own services with the user's access token.
+  Add `jose` as a dependency.
+
+### Patch Changes
+
+- [#300](https://github.com/lupinum-dev/better-convex/pull/300) [`78e1272`](https://github.com/lupinum-dev/better-convex/commit/78e1272e994079386cb8800c289ed1af0ef01149) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix auth failures being handled differently on the server and in the browser, and a setup error being shown as an outage.
+  
+  One rule now applies everywhere: 401 and 403 end the session; no answer, a timeout, 408, 429 and 5xx keep it and retry (`AUTH_UNAVAILABLE`); any other answer, such as a redirect, a 404 or a token without `sub`, is the new setup error `AUTH_MISCONFIGURED`, and the route middleware redirects.
+  A temporary failure during a session-changing call such as `updateUser()` keeps the session and rejects the call with `AUTH_UNAVAILABLE`.
+  A temporary failure of the first session read in the browser now retries on its own with backoff, and a page the server rendered anonymous stays anonymous.
+  `useConvexAuth().error.code` is now set (for example `AUTH_UNAVAILABLE` or `SITE_URL_MISSING`); check the code instead of the message.
+
+- [#314](https://github.com/lupinum-dev/better-convex/pull/314) [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `better-convex init` leaving `.env.local` readable by other local users after it adds the proxy secret. The file is now mode 600.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `organization.requireEmailVerificationOnInvitation: undefined` turning off the rule that an invitation needs a verified address. Only `false` turns it off.
+
+- [#311](https://github.com/lupinum-dev/better-convex/pull/311) [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a provider in `account.accountLinking.trustedProviders` linking to a user whose address nobody verified. The link now fails with `AUTH_LINK_UNVERIFIED_EMAIL` until the address is verified.
+
+- [#305](https://github.com/lupinum-dev/better-convex/pull/305) [`9ea1c89`](https://github.com/lupinum-dev/better-convex/commit/9ea1c890e23427e01a3380ab64d2879bdd357410) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the OAuth operator accepting a query context, and refusing an MCP resource on the IPv6 loopback address `http://[::1]`.
+  
+  `auth.oauthOperator.createPublicClient` and `deleteClient` now take a mutation or action context, like `createHostClient` and `setClientDisabled`. A query context is a type error, and every operator call throws `AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION` at entry when it gets one. Such calls already failed later at runtime.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `/oauth2/public-client-prelogin` showing the name and contacts of any client to a visitor who holds the signed query of another client.
+  
+  Also refuse a `loginPage` or `consentPage` that contains a backslash, and run the authorize, token and revoke checks for a path with a trailing slash too.
+
+- [#311](https://github.com/lupinum-dev/better-convex/pull/311) [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a password reset, an address verification or an OIDC logout failing for a person with more than 128 sessions, which left every session alive.
+
+- [#314](https://github.com/lupinum-dev/better-convex/pull/314) [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `defu` and `ohash` to exact versions, like the other runtime dependencies.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the auth proxy to refuse every Better Auth cookie without `HttpOnly` or with `SameSite=None`, not only the session cookie. A deletion cookie is checked only for `Secure`.
+  
+  The refusal of a query on a fixed metadata route now carries the code `BCN_AUTH_PROXY_METADATA_QUERY_REJECTED`.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix turning on two-factor leaving the person's other sessions signed in. A session that signed in with a stolen password before then never had to pass the second factor.
+- Updated dependencies [[`78e1272`](https://github.com/lupinum-dev/better-convex/commit/78e1272e994079386cb8800c289ed1af0ef01149), [`4bfa2d1`](https://github.com/lupinum-dev/better-convex/commit/4bfa2d1cb897fbeedb54bd4a67f7c03f8ddc2c72), [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e), [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d), [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0), [`9ea1c89`](https://github.com/lupinum-dev/better-convex/commit/9ea1c890e23427e01a3380ab64d2879bdd357410), [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d), [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0), [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e), [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d), [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d)]:
+  - @lupinum/better-convex-vue@1.0.0-rc.7
+
 ## 1.0.0-rc.6
 
 ### Patch Changes
