@@ -207,12 +207,31 @@ The local-backend integration suite covers real HTTP between Nuxt and Convex.
 
 Do not mock Better Auth to test behavior. Better Auth disables origin (CSRF)
 checks in test environments. Enable production checks in tests that depend on
-these checks. Set the host `NODE_ENV=production` and `TEST=false` in
-`vi.hoisted` before importing Better Auth, then restore both in `afterAll`.
-Better Auth captures `NODE_ENV` at import and reads `TEST` when it creates the
-request context. Changing only the edge-runtime environment is insufficient.
-Explicit `disableOriginCheck: false` and `disableCSRFCheck: false` also enable
-both checks. See `test/convex/auth-site-origins.test.ts`.
+these checks. Set the host `NODE_ENV=production` and `TEST=false` before
+importing Better Auth, then restore both in `afterAll`. Better Auth captures
+`NODE_ENV` at import and reads `TEST` when it creates the request context.
+Changing only the edge-runtime environment is insufficient. Explicit
+`disableOriginCheck: false` and `disableCSRFCheck: false` also enable both
+checks. `test/helpers/real-auth.ts` does all of this; import it before anything
+that loads Better Auth.
+
+## Security tests
+
+The auth bugs that reach users hide between Better Auth and this repository:
+Better Auth sends a request shape that a hand-written test never sends. So:
+
+1. Test an auth guard through the real Better Auth routes. `createRealAuth`
+   in `test/helpers/real-auth.ts` runs the factory, the real component and the
+   HTTP routes in convex-test, with a cookie jar per browser and a fresh IP
+   address per request. See `test/convex/auth-identity-redteam.test.ts`.
+2. Call the component adapter directly only to seed rows or read them back, or
+   in a test of the adapter itself. A security outcome (a session ends, an
+   account is refused) is asserted after a real route ran.
+3. Cross every limit on the path: more rows than one bulk write (128), more
+   sessions than one page, a value one byte over a size limit.
+4. Give each guard a mutant row (see "Mutation check") whose `kills` test runs
+   the real route. A row that only a hand-built input can kill does not
+   protect users.
 
 ## Design rules
 
