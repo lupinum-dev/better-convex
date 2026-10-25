@@ -24,10 +24,13 @@ export const fns = defineFunctions({
   rules: {
     users: owner('_id'),
     organizations: tenant('_id'),
-    // Every membership of an organization where your role allows the action. Not owner('userId'):
-    // that would let a member change their own role or add themselves to another organization.
-    memberships: custom<Doc<'memberships'>>((ctx, membership) =>
-      ctx.allows({ table: 'organizations', id: membership.organizationId }),
+    // Every membership of an organization where your role allows the action, inside the
+    // organization the call names (as tenant() does). Not owner('userId'): that would let a
+    // member change their own role or add themselves to another organization.
+    memberships: custom<Doc<'memberships'>>(
+      (ctx, membership) =>
+        (ctx.tenant === undefined || ctx.tenant.id === membership.organizationId) &&
+        ctx.allows({ table: 'organizations', id: membership.organizationId }),
     ),
     sites: tenant('organizationId'),
     siteChecks: tenant('organizationId'),

@@ -64,9 +64,12 @@ export const { query, mutation, internalQuery, internalMutation, internalAction,
     rules: {
       users: owner('_id'),
       orgs: tenant('_id'),
-      // The documented rule (row-rules.md): every membership of an org where the role allows the action.
-      memberships: custom<DocumentByName<DataModel, 'memberships'>>((ctx, membership) =>
-        ctx.allows({ table: 'orgs', id: membership.orgId }),
+      // The documented rule (row-rules.md): every membership of an org where the role allows the
+      // action, inside the org the call names.
+      memberships: custom<DocumentByName<DataModel, 'memberships'>>(
+        (ctx, membership) =>
+          (ctx.tenant === undefined || ctx.tenant.id === membership.orgId) &&
+          ctx.allows({ table: 'orgs', id: membership.orgId }),
       ),
       // An archived project is read-only: a state condition in the rule, not in each handler.
       projects: allOf(
