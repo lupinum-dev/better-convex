@@ -180,7 +180,7 @@
     "vitest": "^4.1.12",
     "vitest-browser-vue": "^2.1.0",
     "vue-tsc": "^3.3.13",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "@better-auth/core": "1.7.7",
