@@ -2899,6 +2899,50 @@ export const mutants: Mutant[] = [
     projects: ['security'],
   },
   {
+    id: 'S-A-approval-binds-call',
+    guards: 'approved work runs only the tool and input the person approved',
+    file: 'packages/agents/src/tools.ts',
+    find: 'callKey(row.tool, row.input) !== callKey(op.tool.name, raw)',
+    replace: 'false',
+    kills: [
+      'packages/agents/test/approvals/approvals.test.ts > work under an executing approval refuses other input',
+    ],
+    projects: ['agents'],
+  },
+  {
+    id: 'S-F-trusted-route-segments',
+    guards: 'a trusted route prefix covers whole path segments only',
+    file: 'packages/functions/src/guard.ts',
+    find: "path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`)",
+    replace: 'path.startsWith(prefix)',
+    kills: [
+      'packages/functions/test/no-bypass.test.ts > a trusted route prefix covers whole path segments',
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S-F-inert-markdown-www',
+    guards: 'a bare www. address in a summary is not a link',
+    file: 'packages/functions/src/values.ts',
+    find: ".replace(/\\b(www)\\./giu, '$1\\\\.')",
+    replace: '',
+    kills: [
+      'packages/functions/test/values.test.ts > inert markdown shows "Visit www.evil.example." as text',
+    ],
+    projects: ['functions'],
+  },
+  {
+    id: 'S-F-inert-markdown-email',
+    guards: 'an email address in a summary is not a link',
+    file: 'packages/functions/src/values.ts',
+    find: '[\\\\`*_[\\]()<>!#|~@]',
+    replace: '[\\\\`*_[\\]()<>!#|~]',
+    kills: [
+      'packages/functions/test/values.test.ts > inert markdown shows "Mail ceo@evil.example" as text',
+    ],
+    projects: ['functions'],
+  },
+  {
     id: 'S-B-delete-user-default-off',
     guards: 'deleteUser stays off unless the app enables it',
     file: 'src/runtime/convex-auth/create-better-convex-auth.ts',

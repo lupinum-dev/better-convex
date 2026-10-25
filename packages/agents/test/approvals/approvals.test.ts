@@ -840,6 +840,29 @@ test('work refuses an approval that is not executing right now', async () => {
   expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'v1' })
 })
 
+// Catches: an approval while it runs covering another call than the one the person decided on.
+test('work under an executing approval refuses other input', async () => {
+  const s = await setup()
+  const noteId = await s.t.run((ctx) => ctx.db.insert('notes', { userId: s.annId, text: 'v1' }))
+  const input = { noteId, text: 'agent' }
+  const note = await s.ask('edit_note', input)
+  await s.t.run((ctx) =>
+    ctx.db.patch(ctx.db.normalizeId('approvals', note.approvalId)!, { status: 'executing' }),
+  )
+  const approval = { id: note.approvalId, decidedBy: s.annId }
+  await expect(
+    s.t.mutation(api.tools.edit_note, {
+      caller: s.caller,
+      input: { noteId, text: 'something else' },
+      approval,
+    }),
+  ).rejects.toThrow(/APPROVAL_NOT_FOUND/)
+  expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'v1' })
+  // The call the person saw still runs.
+  await s.t.mutation(api.tools.edit_note, { caller: s.caller, input, approval })
+  expect(await s.t.run((ctx) => ctx.db.get(noteId))).toMatchObject({ text: 'agent' })
+})
+
 // Round 1 review: approving replayed the request's 10-minute access token, so a later approval failed.
 test('a person may approve after the access token that asked has expired', async () => {
   const s = await setup()

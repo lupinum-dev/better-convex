@@ -496,10 +496,12 @@ export function defineTools(
           if (approval) {
             // Called by `approve` as a sub-transaction, which marked the request as executing: a failure rolls back only this.
             const row = await lib(ctx).get(approval.id)
+            // The approval covers one call: this tool, with the input the person saw.
             if (
               row?.status !== 'executing' ||
               row.requester.key !== requester.key ||
-              row.action !== op.action
+              row.action !== op.action ||
+              callKey(row.tool, row.input) !== callKey(op.tool.name, raw)
             ) {
               fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
             }
