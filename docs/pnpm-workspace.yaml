@@ -19,6 +19,10 @@ overrides:
   # Several compiler/build owners pin the vulnerable patch exactly.
   # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
   source-map-js: 1.2.2
+  # @lupinum/ginko-content 1.0.0-beta.5 and @lupinum/ginko-docs 0.4.0-rc.4 pin
+  # zod 4.4.3 exactly (GHSA-mrhx-c7xc-m3w5, fixed in 4.6.6). Remove when the docs
+  # use ginko releases that allow zod >=4.6.6 without this pin.
+  zod: 4.6.7
   # Remove these audit pins when normal resolution retains the patched versions.
   'ajv@8>fast-uri': 3.1.9
   'express@5>qs': 6.16.0
