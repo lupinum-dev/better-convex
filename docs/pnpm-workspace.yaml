@@ -20,7 +20,7 @@ overrides:
   # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.
   source-map-js: 1.2.2
   # Remove these audit pins when normal resolution retains the patched versions.
-  'ajv@8>fast-uri': 3.1.8
+  'ajv@8>fast-uri': 3.1.9
   'express@5>qs': 6.16.0
   'body-parser@2>qs': 6.16.0
   esbuild: 0.28.1
@@ -48,3 +48,5 @@ patchedDependencies:
 minimumReleaseAgeExclude:
   # Renovate security update: hono@4.13.11
   - hono@4.13.11
+  # Renovate security update: fast-uri@3.1.9
+  - fast-uri@3.1.9
