@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -120,13 +120,20 @@ describe.sequential('better-convex init', () => {
 
   it('writes the same site URL and proxy secret to .env.local and Convex', async () => {
     const harness = createHarness()
-    await writeFile(join(root, '.env.local'), 'CONVEX_URL=https://fixture.convex.cloud')
+    // The Convex CLI creates .env.local before init runs, readable by others.
+    await writeFile(join(root, '.env.local'), 'CONVEX_URL=https://fixture.convex.cloud', {
+      mode: 0o644,
+    })
 
     await expect(runInitCommand([], harness.dependencies)).resolves.toBe(0)
 
     expect(await read('.env.local')).toBe(
       'CONVEX_URL=https://fixture.convex.cloud\nSITE_URL=http://localhost:4173\nBCN_AUTH_PROXY_IP_SECRET=SENTINEL_SECRET_DO_NOT_LOG\n',
     )
+    // Catches: the proxy secret landing in a file other local users can read.
+    if (process.platform !== 'win32') {
+      expect((await stat(join(root, '.env.local'))).mode & 0o777).toBe(0o600)
+    }
     expect(harness.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBe('SENTINEL_SECRET_DO_NOT_LOG')
     expect(JSON.stringify(harness.logs)).not.toContain('SENTINEL_SECRET_DO_NOT_LOG')
   })
