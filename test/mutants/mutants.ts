@@ -2795,6 +2795,29 @@ export const mutants: Mutant[] = [
     projects: ['agents'],
   },
   {
+    id: 'S-B-session-revoke-better-auth-selector',
+    guards:
+      "a password reset ends every session past one bulk delete, for Better Auth's real selector",
+    file: 'src/runtime/convex-auth/session-generation.ts',
+    find: "(owner.mode !== undefined && owner.mode !== 'sensitive') ||",
+    replace: 'owner.mode !== undefined ||',
+    kills: [
+      'test/convex/auth-identity-safe-defaults.test.ts > safe auth defaults > ends every earlier session when a password is reset, also past 128 sessions',
+    ],
+    projects: ['convex'],
+  },
+  {
+    id: 'S-B-link-trusted-provider-needs-proven-address',
+    guards: 'a trusted provider links only to a user who proved the address',
+    file: 'src/runtime/convex-auth/identity-guards.ts',
+    find: "if (typeof provider !== 'string' || !trusted.has(provider)) return",
+    replace: 'return',
+    kills: [
+      'test/convex/auth-identity-safe-defaults.test.ts > users with an unverified email > refuses to link a trusted provider to an unverified address, and links once it is proven',
+    ],
+    projects: ['convex'],
+  },
+  {
     id: 'S-B-delete-user-default-off',
     guards: 'deleteUser stays off unless the app enables it',
     file: 'src/runtime/convex-auth/create-better-convex-auth.ts',

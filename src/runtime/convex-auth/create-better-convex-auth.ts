@@ -1407,7 +1407,7 @@ export function createBetterConvexAuthOwned<
       })
       const plugins: BetterAuthPlugin[] = [
         ...featurePlugins,
-        createIdentityGuardsPlugin(),
+        createIdentityGuardsPlugin(trustedProviders),
         ...(oidc ? [oidc.plugin] : []),
         ...extraPlugins,
         jwtPlugin,

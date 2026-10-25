@@ -1,11 +1,12 @@
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth'
-import { APIError, createAuthMiddleware } from 'better-auth/api'
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 
 /**
  * Identity guards that close account-takeover paths Better Auth leaves open
  * by default. The factory owns this plugin; options cannot turn it off.
  */
-export function createIdentityGuardsPlugin(): BetterAuthPlugin {
+export function createIdentityGuardsPlugin(trustedProviders: readonly string[]): BetterAuthPlugin {
+  const trusted = new Set(trustedProviders)
   return {
     id: 'better-convex-identity-guards',
     hooks: {
@@ -19,6 +20,27 @@ export function createIdentityGuardsPlugin(): BetterAuthPlugin {
               body: { ...(context.body as object), revokeOtherSessions: true },
             },
           })),
+        },
+        {
+          // Linking a trusted provider skips Better Auth's check that the provider
+          // verified the email. That trust is safe only for a user who already proved
+          // the address: a squatter who registered someone else's address with a
+          // password could otherwise link a provider account whose email claim they
+          // chose, and keep signing in through it after the owner verifies.
+          matcher: (context) => context.path === '/link-social',
+          handler: createAuthMiddleware(async (context) => {
+            const provider = (context.body as { provider?: unknown } | undefined)?.provider
+            if (typeof provider !== 'string' || !trusted.has(provider)) return
+            const user = (await getSessionFromCtx(context))?.user as
+              | { emailVerified?: unknown; isAnonymous?: unknown }
+              | undefined
+            // Without a session the route itself answers 401.
+            if (!user || user.emailVerified === true || user.isAnonymous === true) return
+            throw new APIError('FORBIDDEN', {
+              message: 'AUTH_LINK_UNVERIFIED_EMAIL',
+              code: 'AUTH_LINK_UNVERIFIED_EMAIL',
+            })
+          }),
         },
       ],
     },

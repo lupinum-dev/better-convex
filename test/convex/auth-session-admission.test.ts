@@ -397,10 +397,14 @@ describe('backend helpers use canonical component admission', () => {
     const authApi = createBetterConvexAuth(components.sessionAuth)
     expect(await staleClient.query((ctx) => authApi.getUser(ctx))).toMatchObject(user)
 
+    // The selector exactly as Better Auth's deleteUserSessions sends it: the adapter
+    // factory fills in operator, connector and mode before the component sees it.
     await expect(
       test.mutation(auth.deleteMany, {
         model: 'session',
-        where: [{ field: 'userId', value: user.id }],
+        where: [
+          { field: 'userId', value: user.id, operator: 'eq', connector: 'AND', mode: 'sensitive' },
+        ],
       }),
     ).resolves.toBe(0)
 
