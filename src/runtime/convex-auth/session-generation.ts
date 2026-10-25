@@ -204,7 +204,11 @@ export async function readAuthSessionAdmission(
   return { user, session }
 }
 
-/** Recognize Better Auth's canonical deleteUserSessions selector. */
+/**
+ * Recognize Better Auth's canonical deleteUserSessions selector. Better Auth
+ * fills in `operator: 'eq'`, `connector: 'AND'` and `mode: 'sensitive'` before
+ * the adapter sees a clause, so those defaults must match too.
+ */
 export async function invalidateSessionCollection(
   ctx: WriteCtx,
   model: string,
@@ -217,7 +221,7 @@ export async function invalidateSessionCollection(
     owner?.field !== authority.userIdField ||
     (owner.operator !== undefined && owner.operator !== 'eq') ||
     owner.connector === 'OR' ||
-    owner.mode !== undefined ||
+    (owner.mode !== undefined && owner.mode !== 'sensitive') ||
     typeof owner.value !== 'string' ||
     !owner.value
   ) {

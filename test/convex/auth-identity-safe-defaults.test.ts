@@ -112,6 +112,41 @@ describe('safe auth defaults', () => {
     expect(await run(false)).toBe(true)
   })
 
+  // Catches: the reset failing once a person has more sessions than one bulk delete (128),
+  // which leaves every session of whoever knew the old password alive.
+  it('ends every earlier session when a password is reset, also past 128 sessions', async () => {
+    const s = createRealAuth({
+      emailAndPassword: { passwordReset: true, requireEmailVerification: false },
+    })
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    const userId = (await s.users()).page[0]!.id as string
+    const now = Date.now()
+    for (let index = 0; index < 128; index += 1) {
+      await s.test.mutation(authComponent.adapter.create, {
+        model: 'session',
+        data: {
+          userId,
+          id: `seeded-session-${index}`,
+          token: `seeded-token-${index}`,
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: now + 86_400_000,
+          ipAddress: null,
+          userAgent: null,
+        },
+      })
+    }
+    await s.client().post('/request-password-reset', { email: VICTIM })
+    const mail = s.lastMail('reset-password', VICTIM) as { token: string }
+    const done = await s
+      .client()
+      .post('/reset-password', { token: mail.token, newPassword: VICTIM_PW })
+    expect(done.status).toBe(200)
+    expect(await squatter.hasSession()).toBe(false)
+  })
+
   it('ends other sessions when a signed-in person changes the password', async () => {
     const s = createRealAuth({ emailAndPassword: { requireEmailVerification: false } })
     const other = s.client()
@@ -503,6 +538,50 @@ describe('users with an unverified email', () => {
     } as never)
     await socialSignIn(s.client())
     expect(seen).toEqual([])
+  })
+
+  /** Link the github provider to the signed-in user: start, then the provider's callback. */
+  async function linkGithub(client: RealAuthClient) {
+    const start = await client.post('/link-social', {
+      provider: 'github',
+      callbackURL: 'https://app.example.test/settings',
+      errorCallbackURL: 'https://app.example.test/link-failed',
+    })
+    if (start.status !== 200) return start
+    const state = new URL((start.body as { url: string }).url).searchParams.get('state')
+    return await client.get(`/callback/github?code=abc&state=${state}`)
+  }
+  const providers = async (s: RealAuth) =>
+    (await s.accounts()).page.map((row) => (row as { providerId: string }).providerId).sort()
+
+  // Catches: a squatter linking a trusted provider whose email claim they chose to an address
+  // they never proved, and then signing in through it after the owner verifies.
+  it('refuses to link a trusted provider to an unverified address, and links once it is proven', async () => {
+    stubGithubToken()
+    const s = createRealAuth({
+      emailAndPassword: { requireEmailVerification: false },
+      socialProviders: github(false),
+      account: { accountLinking: { trustedProviders: ['github'] } },
+    } as never)
+    const squatter = s.client()
+    await squatter.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
+    await squatter.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect(await linkGithub(squatter)).toMatchObject({
+      status: 403,
+      body: { code: 'AUTH_LINK_UNVERIFIED_EMAIL' },
+    })
+    expect(await providers(s)).toEqual(['credential'])
+
+    const userId = (await s.users()).page[0]!.id as string
+    await s.test.mutation(authComponent.adapter.updateOne, {
+      model: 'user',
+      where: [{ field: 'id', value: userId }],
+      update: { emailVerified: true },
+    })
+    const owner = s.client()
+    await owner.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
+    expect((await linkGithub(owner)).location).toBe('https://app.example.test/settings')
+    expect(await providers(s)).toEqual(['credential', 'github'])
   })
 })
 
