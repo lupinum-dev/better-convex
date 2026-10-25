@@ -58,7 +58,9 @@ explains the trust boundaries in detail. In short:
   address with `BCN_AUTH_PROXY_IP_SECRET`, so a caller cannot choose a
   rate-limit bucket. Any process-local defense in depth is only an extra
   layer. Deployments still need a
-  trusted-ingress per-account and per-IP limiter for distributed abuse.
+  trusted-ingress per-account and per-IP limiter for distributed abuse. In
+  `@lupinum/better-convex-functions`, signed-out visitors share one bucket per
+  limited public action, so one client can use it up for every visitor.
 - **Passwords.** Password sign-in is off unless the app passes
   `emailAndPassword`. Better Auth hashes and checks passwords. The factory
   requires 15 characters, turns off sign-in after sign-up, and requires a
@@ -66,7 +68,10 @@ explains the trust boundaries in detail. In short:
   stranger for someone else's address survives that owner's verification; apps
   that decide access by email use email codes.
   Deployments still own a breached/common-password blocklist, account
-  recovery, and abuse controls.
+  recovery, and abuse controls. With two-factor, a device that the person
+  trusted skips the second factor for `twoFactor.trustDeviceMaxAge` (30 days by
+  default), also after two-factor is turned off and on again or the password
+  changes. It still needs the password.
 - **Company sign-in.** With the `oidc` option, these checks are always on:
   state, PKCE S256, a nonce, a verified ID token, account keys bound to the
   issuer, users managed by the identity provider (IdP), and back-channel

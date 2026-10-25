@@ -150,6 +150,7 @@ const focus = {
     rules: [
       'Build every Convex function with `query`, `mutation`, `action`, `internalQuery`, `internalMutation`, `internalAction` or `job` from `defineFunctions`, never from `./_generated/server`. Create `action` once with `fns.action(internal.functions.authorizeAction)` and export `authorizeAction` from `fns`. Wrap a function that must skip the library in `trusted(reason, fn)`, and keep the `unguardedFunctions` test green.',
       'Add an action to `policy.actions` before an operation uses it. Give every table a row rule; do not check membership in the handler.',
+      'A `custom` row rule for a row of a tenant checks both `ctx.allows(tenant)` and that `ctx.tenant` is `undefined` or that tenant, as `tenant()` does. Without the second check, a call in one organization reaches rows of another where the caller has the same role.',
       'Never check a role in a handler or in a wrapper around the builders. `roleOf` gives every role: for the tenant a call names, and for `null` (a call that names none) the role outside any tenant, such as `signedIn`, or the role of the member in an app with one workspace. Answer `null` for a tenant you do not handle.',
       'Read rows by an index that starts with the field the table rule checks (the tenant or owner field, or the `publicRead` condition). A query that returns a row the caller may not read fails.',
       'An operation on an `anyOf` table names its tenant in its own arguments (`organizationId`).',

@@ -229,7 +229,11 @@ Better Auth sends a request shape that a hand-written test never sends. So:
    account is refused) is asserted after a real route ran.
 3. Cross every limit on the path: more rows than one bulk write (128), more
    sessions than one page, a value one byte over a size limit.
-4. Give each guard a mutant row (see "Mutation check") whose `kills` test runs
+4. Test a path check with the spellings an attacker tries: a trailing slash,
+   a prefix that shares letters (`/api/authz` next to `/api/auth`), `/\host`,
+   a query or a fragment. The spelling must get the same refusal as the
+   canonical path (see `test/convex/auth-oauth-route-guards.test.ts`).
+5. Give each guard a mutant row (see "Mutation check") whose `kills` test runs
    the real route. A row that only a hand-built input can kill does not
    protect users.
 
