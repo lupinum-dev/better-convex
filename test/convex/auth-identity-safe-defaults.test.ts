@@ -482,6 +482,24 @@ describe('two-factor combinations', () => {
     ).not.toThrow()
     expect(build({ emailAndPassword: { requireEmailVerification: false } })).not.toThrow()
   })
+
+  // Catches: a session signed in with a stolen password surviving the owner's switch to
+  // two-factor, which then never asks that session for the second factor.
+  it('ends every other session when the person turns on two-factor, and keeps their own', async () => {
+    const s = createRealAuth(
+      { emailAndPassword: { requireEmailVerification: false }, twoFactor: {} },
+      { component: 'twoFactor' },
+    )
+    const thief = s.client()
+    await thief.post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
+    await thief.post('/sign-in/email', { email: VICTIM, password: VICTIM_PW })
+    const owner = s.client()
+    await owner.post('/sign-in/email', { email: VICTIM, password: VICTIM_PW })
+    const enabled = await owner.post('/two-factor/enable', { password: VICTIM_PW, method: 'otp' })
+    expect(enabled).toMatchObject({ status: 200, body: { method: 'otp' } })
+    expect(await thief.hasSession()).toBe(false)
+    expect(await owner.hasSession()).toBe(true)
+  })
 })
 
 describe('users with an unverified email', () => {

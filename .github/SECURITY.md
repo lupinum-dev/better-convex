@@ -51,7 +51,7 @@ explains the trust boundaries in detail. In short:
   and lives at most 10 minutes. Each boundary rejects the other token type.
 - **Live session checks.** `auth.getUser(ctx)` and `auth.requireUser(ctx)`
   check that the session still exists and belongs to the user's current
-  security generation. A password reset ends all earlier sessions (`revokeSessionsOnPasswordReset` defaults to `true`; a password change ends the others, and verifying an address ends earlier sessions).
+  security generation. A password reset ends all earlier sessions (`revokeSessionsOnPasswordReset` defaults to `true`; a password change ends the others, and verifying an address or turning on two-factor ends earlier sessions).
   `ctx.auth.getUserIdentity()` alone does not check revocation.
 - **Rate limits.** Better Auth rate limits are stored in the Convex component.
   When a deployment names a trusted client-IP header, Nuxt signs the IP

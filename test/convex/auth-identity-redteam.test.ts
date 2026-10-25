@@ -372,6 +372,16 @@ describe('redteam: organization invitation requires a verified email', () => {
     expect(await orgInvitationFlag({ organization: {} })).toBe(true)
   })
 
+  // Catches: an explicit undefined (for example from an unset environment value) overwriting
+  // the default and silently letting squatters accept invitations.
+  it('HELD: an explicit undefined keeps the gate on', async () => {
+    expect(
+      await orgInvitationFlag({
+        organization: { requireEmailVerificationOnInvitation: undefined },
+      }),
+    ).toBe(true)
+  })
+
   it('NOTE: an app can still override the invitation gate to false (visible, un-whitelisted)', async () => {
     // Recorded for the maintainer: organization options are pass-through, so a
     // spread override is possible, unlike emailOTP keys which are whitelisted.

@@ -767,6 +767,23 @@ describe('auth proxy security regressions', () => {
     expect(jwksRequest.res.getHeader('access-control-allow-origin')).toBe('*')
   })
 
+  // Catches: a fixed public route passing a caller's query or fragment on to Convex, where it
+  // could select other behavior or split a shared cache.
+  it.each(['/api/auth/jwks?kid=other', '/api/auth/jwks#x'])(
+    'refuses %s before it reaches Convex',
+    async (path) => {
+      const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
+      const handler = await loadHandler('jwks')
+      await expect(
+        handler(event('GET', undefined, { 'cf-connecting-ip': '' }, path)),
+      ).rejects.toMatchObject({
+        status: 400,
+        data: { code: 'BCN_AUTH_PROXY_METADATA_QUERY_REJECTED' },
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
   it('serves public JWKS to a browser with cookies and never forwards them', async () => {
     const fetchMock = stubFetch(vi.fn(async () => new Response('{"keys":[]}')))
     const handler = await loadHandler('jwks')

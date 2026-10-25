@@ -772,6 +772,9 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
       }
       if (!oauthOptions || !providerRuntimeOptions) return
       if (!path) return { response: oauthFailure('invalid_request') }
+      // Guard the route, not its spelling: a router that also served `/oauth2/token/`
+      // must not reach the provider without these checks.
+      const routePath = path.replace(/(?<=.)\/+$/u, '')
       const metadataPaths = new Set([
         `/.well-known/oauth-authorization-server${issuerPath}`,
         `${issuerPath}/.well-known/oauth-authorization-server`,
@@ -808,12 +811,12 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
                 : Response.json(projected),
           }
         }
-        if (path === `${issuerPath}/oauth2/authorize`) {
+        if (routePath === `${issuerPath}/oauth2/authorize`) {
           const resourceFailure = await guardAuthorizeProfile(request, context, oauthOptions)
           if (resourceFailure) return { response: resourceFailure }
-        } else if (path === `${issuerPath}/oauth2/token`) {
+        } else if (routePath === `${issuerPath}/oauth2/token`) {
           await guardTokenRequest(request, context, oauthOptions)
-        } else if (path === `${issuerPath}/oauth2/revoke`) {
+        } else if (routePath === `${issuerPath}/oauth2/revoke`) {
           await guardRevokeRequest(request, context, oauthOptions)
         }
       } catch (error) {
@@ -846,6 +849,26 @@ export function convexAuth(options: ConvexAuthOptions): BetterAuthPlugin {
         internalSessionBearerBefore,
         ...(oauthOptions
           ? [
+              {
+                // The provider checks only that oauth_query is signed, not that it is the
+                // query of this client, so one signed query would read the display fields
+                // (name, contacts, links) of every other client.
+                matcher: (context: Parameters<BeforeHook['matcher']>[0]) =>
+                  context.path === '/oauth2/public-client-prelogin',
+                handler: createAuthMiddleware(async (context) => {
+                  const body = context.body as
+                    | { client_id?: unknown; oauth_query?: unknown }
+                    | undefined
+                  const query =
+                    typeof body?.oauth_query === 'string'
+                      ? new URLSearchParams(body.oauth_query)
+                      : undefined
+                  const clientIds = query?.getAll('client_id') ?? []
+                  if (clientIds.length !== 1 || clientIds[0] !== body?.client_id) {
+                    throw new APIError('BAD_REQUEST', { error: 'invalid_request' })
+                  }
+                }),
+              },
               {
                 matcher: (context: Parameters<BeforeHook['matcher']>[0]) =>
                   context.path === '/admin/oauth2/create-client' ||
