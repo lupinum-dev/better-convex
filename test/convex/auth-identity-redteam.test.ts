@@ -1,194 +1,23 @@
 /// <reference types="vite/client" />
 // Red-team pass against the rc.3 auth safe-defaults (identity guards, dev outbox,
 // factory). Each test states the attack and whether the guard HELD or is BROKEN.
-// Harness copied from auth-identity-safe-defaults.test.ts (same convex-test wiring,
-// real Better Auth 1.7.6, real component).
-import { convexTest } from 'convex-test'
-import { componentsGeneric, defineSchema, httpRouter } from 'convex/server'
-import { afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+// Real Better Auth on the real component, through test/helpers/real-auth.ts.
+import { describe, expect, it } from 'vitest'
 
-import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
-import authSchema from '../../src/runtime/convex-auth/component/schema'
-import type {
-  BetterConvexAuthEmail,
-  CreateBetterConvexAuthOptions,
-} from '../../src/runtime/convex-auth/create-better-convex-auth'
-import anonymousSchema from '../fixtures/better-auth-anonymous/convex/betterAuth/schema'
-import twoFactorSchema from '../fixtures/better-auth-two-factor/convex/betterAuth/schema'
-
-const restoreHostEnvironment = await vi.hoisted(async () => {
-  const { env } = await import('node:process')
-  const previous = { NODE_ENV: env.NODE_ENV, TEST: env.TEST }
-  env.NODE_ENV = 'production'
-  env.TEST = 'false'
-  return () => {
-    for (const [name, value] of Object.entries(previous)) {
-      if (value === undefined) Reflect.deleteProperty(env, name)
-      else env[name] = value
-    }
-  }
-})
-const { createBetterConvexAuth } =
-  await import('../../src/runtime/convex-auth/create-better-convex-auth')
-afterAll(restoreHostEnvironment)
-
-const rootModules = import.meta.glob('../fixtures/jwks-rotation/convex/**/*.ts')
-const authModules = import.meta.glob('../../src/runtime/convex-auth/component/**/*.ts')
-const twoFactorModules = import.meta.glob(
-  '../fixtures/better-auth-two-factor/convex/betterAuth/**/*.ts',
-)
-const anonymousModules = import.meta.glob(
-  '../fixtures/better-auth-anonymous/convex/betterAuth/**/*.ts',
-)
-const components = componentsGeneric() as unknown as {
-  sessionAuth: ComponentApi<'sessionAuth'>
-}
+import {
+  authComponent,
+  createBetterConvexAuth,
+  createRealAuth,
+  useAuthEnvironment,
+  type RealAuth,
+} from '../helpers/real-auth'
 
 const VICTIM = 'victim@example.test'
 const ATTACKER_PW = 'attacker-chosen-password-1'
 const VICTIM_PW = 'victim-chosen-password-22'
 
-type Opts = Omit<CreateBetterConvexAuthOptions<never>, 'email'> & {
-  _twoFactorSchema?: boolean
-  _anonymousSchema?: boolean
-  _noEmailHook?: boolean
-}
-
-let ipCounter = 0
-function freshIp() {
-  ipCounter += 1
-  return `198.51.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`
-}
-
-function setup(options: Opts) {
-  const { _twoFactorSchema, _anonymousSchema, _noEmailHook, ...authOptions } = options
-  const test = convexTest(defineSchema({}), rootModules)
-  const [schema, modules] = _twoFactorSchema
-    ? [twoFactorSchema, twoFactorModules]
-    : _anonymousSchema
-      ? [anonymousSchema, anonymousModules]
-      : [authSchema, authModules]
-  test.registerComponent('sessionAuth', schema, modules)
-  const mails: BetterConvexAuthEmail[] = []
-  const auth = createBetterConvexAuth(components.sessionAuth, {
-    ...(_noEmailHook
-      ? {}
-      : {
-          email: async (_ctx: unknown, message: BetterConvexAuthEmail) => {
-            mails.push(message)
-          },
-        }),
-    ...(authOptions as object),
-  } as never)
-  const http = httpRouter()
-  auth.registerRoutes(http)
-
-  function client(fixedIp?: string) {
-    let cookie = ''
-    async function call(
-      method: 'GET' | 'POST',
-      path: string,
-      body?: Record<string, unknown>,
-      ip = fixedIp ?? freshIp(),
-    ) {
-      const response = await test.action(async (ctx) => {
-        const url = new URL(`https://deployment.convex.site/api/auth${path}`)
-        const route = http.lookup(url.pathname, method)
-        if (!route) throw new Error(`no route ${method} ${path}`)
-        const handler = route[0] as unknown as {
-          _handler: (ctx: unknown, request: Request) => Promise<Response>
-        }
-        const res = await handler._handler(
-          { ...ctx, meta: { getRequestMetadata: async () => ({ ip }) } },
-          new Request(url, {
-            method,
-            headers: {
-              'content-type': 'application/json',
-              Origin: process.env.SITE_URL ?? 'https://app.example.test',
-              cookie,
-            },
-            ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}),
-            redirect: 'manual',
-          }),
-        )
-        const text = await res.text()
-        let parsed: unknown = text
-        try {
-          parsed = JSON.parse(text)
-        } catch {
-          // not JSON: keep the text
-        }
-        return { status: res.status, body: parsed, cookies: res.headers.getSetCookie() }
-      })
-      for (const raw of response.cookies) {
-        const [pair] = raw.split(';')
-        const [name, ...rest] = pair!.split('=')
-        const value = rest.join('=')
-        const jar = new Map(
-          cookie
-            .split('; ')
-            .filter(Boolean)
-            .map((p) => [p.split('=')[0]!, p] as const),
-        )
-        if (value === '' || /max-age=0/i.test(raw)) jar.delete(name!)
-        else jar.set(name!, pair!)
-        cookie = [...jar.values()].join('; ')
-      }
-      return response
-    }
-    return {
-      post: (path: string, body: Record<string, unknown>, ip?: string) =>
-        call('POST', path, body, ip),
-      get: (path: string, ip?: string) => call('GET', path, undefined, ip),
-      cookie: () => cookie,
-      hasSession: async () => {
-        const res = await call('GET', '/get-session')
-        return Boolean(
-          res.body && typeof res.body === 'object' && (res.body as { user?: unknown }).user,
-        )
-      },
-      convexToken: async () => {
-        const res = await call('GET', '/convex/token')
-        return res.status === 200 && Boolean((res.body as { token?: unknown } | null)?.token)
-      },
-    }
-  }
-  const lastMail = (type: BetterConvexAuthEmail['type'], to?: string) =>
-    [...mails]
-      .reverse()
-      .find((m) => m.type === type && (!to || m.to.toLowerCase() === to.toLowerCase()))
-  const users = () =>
-    test.query(components.sessionAuth.adapter.findMany, {
-      model: 'user',
-      paginationOpts: { cursor: null, numItems: 50 },
-    })
-  const accounts = () =>
-    test.query(components.sessionAuth.adapter.findMany, {
-      model: 'account',
-      paginationOpts: { cursor: null, numItems: 50 },
-    })
-  const sessions = () =>
-    test.query(components.sessionAuth.adapter.findMany, {
-      model: 'session',
-      paginationOpts: { cursor: null, numItems: 50 },
-    })
-  return { test, auth, client, mails, lastMail, users, accounts, sessions }
-}
-
-function useAuthEnvironment() {
-  beforeEach(() => {
-    vi.stubEnv('SITE_URL', 'https://app.example.test')
-    vi.stubEnv('CONVEX_SITE_URL', 'https://deployment.convex.site')
-    vi.stubEnv('BETTER_AUTH_SECRETS', `0:${'test-secret'.repeat(4)}`)
-  })
-  afterEach(() => {
-    vi.restoreAllMocks()
-    vi.unstubAllEnvs()
-  })
-}
-
 /** Run Better Auth's user-create before-hook as a request on `path` would. */
-function createHook(s: ReturnType<typeof setup>) {
+function createHook(s: RealAuth) {
   return (user: object, path: string | null) =>
     s.test.action(async (ctx) => {
       const instance = await s.auth.createAuth(ctx)
@@ -221,7 +50,7 @@ describe('redteam: unverified user via non sign-up paths (D-e / I-03)', () => {
   useAuthEnvironment()
 
   it('HELD: the verified-unless-password-sign-up guard is an exact, fail-closed match', async () => {
-    const before = createHook(setup({ emailAndPassword: {} }))
+    const before = createHook(createRealAuth({ emailAndPassword: {} }))
     const unverified = { email: VICTIM, emailVerified: false, name: 'x' }
     // Only the exact sign-up path may carry an unverified email.
     expect(await before(unverified, '/sign-up/email')).toBe('allowed')
@@ -243,7 +72,7 @@ describe('redteam: unverified user via non sign-up paths (D-e / I-03)', () => {
   })
 
   it('HELD: a non-boolean-true emailVerified is treated as unverified (no == coercion)', async () => {
-    const before = createHook(setup({ emailAndPassword: {} }))
+    const before = createHook(createRealAuth({ emailAndPassword: {} }))
     for (const emailVerified of [1, 'true', {}, 'yes'] as unknown[]) {
       expect(await before({ email: VICTIM, emailVerified, name: 'x' }, '/callback/:id')).toBe(
         'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
@@ -259,7 +88,7 @@ describe('redteam: unverified user via non sign-up paths (D-e / I-03)', () => {
   })
 
   it('HELD: a create without an endpoint context is refused unless the address is verified', async () => {
-    const before = createHook(setup({ emailAndPassword: {} }))
+    const before = createHook(createRealAuth({ emailAndPassword: {} }))
     // Server-side `internalAdapter.createUser` has no request, so no path to trust.
     expect(await before({ email: VICTIM, emailVerified: false, name: 'x' }, null)).toBe(
       'AUTH_USER_CREATE_UNVERIFIED_EMAIL',
@@ -278,7 +107,7 @@ describe('redteam: anonymous guest reaching an unverified email', () => {
     // only non-sign-up exception, and a guest with a non-boolean isAnonymous is
     // still refused, so an upgrade that drops the flag cannot smuggle an
     // unverified social email in as a guest.
-    const before = createHook(setup({ emailAndPassword: {} }))
+    const before = createHook(createRealAuth({ emailAndPassword: {} }))
     expect(
       await before(
         { email: VICTIM, emailVerified: false, isAnonymous: true },
@@ -298,7 +127,7 @@ describe('redteam: keep a session alive across verification (cookie cache / toke
   useAuthEnvironment()
 
   it('HELD (capability): verification deletes the squatter session row even with the cookie cache on; /get-session stays cosmetically stale', async () => {
-    const s = setup({
+    const s = createRealAuth({
       emailOTP: {},
       emailAndPassword: { requireEmailVerification: false },
       session: { cookieCache: { enabled: true, maxAge: 300 } },
@@ -338,11 +167,11 @@ describe('redteam: keep a session alive across verification (cookie cache / toke
 describe('redteam: 2FA bypass with the one allowed combo (password + twoFactor)', () => {
   useAuthEnvironment()
 
-  async function signUp(s: ReturnType<typeof setup>) {
+  async function signUp(s: RealAuth) {
     await s.client().post('/sign-up/email', { name: 'x', email: VICTIM, password: VICTIM_PW })
   }
-  async function enableTwoFactorFlag(s: ReturnType<typeof setup>) {
-    await s.test.mutation(components.sessionAuth.adapter.updateMany, {
+  async function enableTwoFactorFlag(s: RealAuth) {
+    await s.test.mutation(authComponent.adapter.updateMany, {
       model: 'user',
       where: [{ field: 'email', operator: 'eq', value: VICTIM }],
       update: { twoFactorEnabled: true },
@@ -350,11 +179,13 @@ describe('redteam: 2FA bypass with the one allowed combo (password + twoFactor)'
   }
 
   it('HELD: password sign-in challenges 2FA and mints no session', async () => {
-    const s = setup({
-      _twoFactorSchema: true,
-      emailAndPassword: { requireEmailVerification: false },
-      twoFactor: {},
-    })
+    const s = createRealAuth(
+      {
+        emailAndPassword: { requireEmailVerification: false },
+        twoFactor: {},
+      },
+      { component: 'twoFactor' },
+    )
     await signUp(s)
     await enableTwoFactorFlag(s)
     const attacker = s.client()
@@ -365,11 +196,13 @@ describe('redteam: 2FA bypass with the one allowed combo (password + twoFactor)'
   })
 
   it('HELD: the password reset flow mints no session, so it cannot skip 2FA', async () => {
-    const s = setup({
-      _twoFactorSchema: true,
-      emailAndPassword: { requireEmailVerification: false, passwordReset: true },
-      twoFactor: {},
-    })
+    const s = createRealAuth(
+      {
+        emailAndPassword: { requireEmailVerification: false, passwordReset: true },
+        twoFactor: {},
+      },
+      { component: 'twoFactor' },
+    )
     await signUp(s)
     await enableTwoFactorFlag(s)
     const attacker = s.client()
@@ -390,7 +223,7 @@ describe('redteam: change-password revokeOtherSessions override by body', () => 
   useAuthEnvironment()
 
   it('HELD: a body flag of revokeOtherSessions:false cannot keep another session alive', async () => {
-    const s = setup({ emailAndPassword: { requireEmailVerification: false } })
+    const s = createRealAuth({ emailAndPassword: { requireEmailVerification: false } })
     const other = s.client()
     await other.post('/sign-up/email', { name: 'x', email: VICTIM, password: ATTACKER_PW })
     await other.post('/sign-in/email', { email: VICTIM, password: ATTACKER_PW })
@@ -410,7 +243,7 @@ describe('redteam: change-password revokeOtherSessions override by body', () => 
 describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
   useAuthEnvironment()
 
-  async function otpSignIn(s: ReturnType<typeof setup>, email: string) {
+  async function otpSignIn(s: RealAuth, email: string) {
     const c = s.client()
     await c.post('/email-otp/send-verification-otp', { email, type: 'sign-in' })
     const otp = (s.lastMail('email-otp', email) as { otp: string }).otp
@@ -420,7 +253,7 @@ describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
   it('HELD: a homoglyph / different-script patch email is rejected', async () => {
     // Proven mailbox is attacker-controlled; hook tries to swap in a Latin
     // look-alike of a different address. Cyrillic "а" (U+0430) != Latin "a".
-    const s = setup({
+    const s = createRealAuth({
       emailOTP: {},
       beforeUserCreate: async () => ({ allowed: true, user: { email: 'pаypal@example.test' } }),
     } as never)
@@ -430,7 +263,7 @@ describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
   })
 
   it('HELD: leading/trailing whitespace in a patch email is rejected', async () => {
-    const s = setup({
+    const s = createRealAuth({
       emailOTP: {},
       beforeUserCreate: async ({ user }: { user: { email: string } }) => ({
         allowed: true,
@@ -445,7 +278,7 @@ describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
   it('HELD: a Unicode look-alike that folds to a different address is rejected', async () => {
     // U+212A KELVIN SIGN folds to "k": "keKin" -> "kekin", which is not the
     // clean "kevin" the patch tries to claim, so the swap is refused.
-    const s = setup({
+    const s = createRealAuth({
       emailOTP: {},
       beforeUserCreate: async () => ({ allowed: true, user: { email: 'kevin@example.test' } }),
     } as never)
@@ -454,7 +287,7 @@ describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
   })
 
   it('HELD: an uppercase patch that folds to the proven address is stored canonically', async () => {
-    const s = setup({
+    const s = createRealAuth({
       emailOTP: {},
       beforeUserCreate: async ({ user }: { user: { email: string } }) => ({
         allowed: true,
@@ -471,7 +304,7 @@ describe('redteam: beforeUserCreate email patch tricks (D-f / I-04)', () => {
     // D-f claims the stored email is "always lower-case". With no hook the
     // library returns the user unchanged; this records whether a second OTP
     // sign-in with the lower-case spelling still finds the row (no lockout).
-    const s = setup({ emailOTP: {} })
+    const s = createRealAuth({ emailOTP: {} })
     expect((await otpSignIn(s, 'Mixed@Example.test')).status).toBe(200)
     const stored = (await s.users()).page.map((u) => (u as { email: string }).email)
     const second = await otpSignIn(s, 'mixed@example.test')
@@ -492,7 +325,7 @@ describe('redteam: emailOTP option smuggling past the whitelist (I-09)', () => {
     // Not an own key: the whitelist passes, but the spread into emailOTP() must
     // not carry it, so changeEmail never activates.
     expect(Object.hasOwn(emailOTP, 'changeEmail')).toBe(false)
-    const s = setup({ emailOTP: emailOTP as never })
+    const s = createRealAuth({ emailOTP: emailOTP as never })
     const hasChangeEmail = await s.test.action(async (ctx) => {
       const instance = await s.auth.createAuth(ctx)
       const context = (await instance.$context) as {
@@ -506,13 +339,13 @@ describe('redteam: emailOTP option smuggling past the whitelist (I-09)', () => {
 
   it('HELD: an own changeEmail key or any unknown key is rejected at construction', () => {
     expect(() =>
-      createBetterConvexAuth(components.sessionAuth, {
+      createBetterConvexAuth(authComponent, {
         email: async () => {},
         emailOTP: { changeEmail: { enabled: true } },
       } as never),
     ).toThrow(/changeEmail/)
     expect(() =>
-      createBetterConvexAuth(components.sessionAuth, {
+      createBetterConvexAuth(authComponent, {
         email: async () => {},
         emailOTP: { ['__proto__']: { changeEmail: true }, note: 1 } as never,
       } as never),
@@ -524,7 +357,7 @@ describe('redteam: organization invitation requires a verified email', () => {
   useAuthEnvironment()
 
   async function orgInvitationFlag(options: object) {
-    const s = setup(options as never)
+    const s = createRealAuth(options as never)
     return s.test.action(async (ctx) => {
       const instance = await s.auth.createAuth(ctx)
       const context = (await instance.$context) as {

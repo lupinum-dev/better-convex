@@ -1331,6 +1331,8 @@ test.each([
     })
     expect(after).toEqual(left)
   },
+  // The 17,000-row case runs in about 4 s alone and past 30 s under coverage on a loaded machine.
+  120_000,
 )
 
 // Catches (r3:1, rf:3, r2r:2): retention cleanup of every table at once, each over the batch, with
