@@ -1,5 +1,35 @@
 # @lupinum/better-convex-functions
 
+## 0.1.0-rc.5
+
+### Patch Changes
+
+- [#299](https://github.com/lupinum-dev/better-convex/pull/299) [`1970336`](https://github.com/lupinum-dev/better-convex/commit/19703362092e79e75e4f54a38be1b2187cfa715c) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix work that an allowed agent tool scheduled failing with `AGENT_DISABLED` after the agent's turn moved on, its run ended or its MCP access token expired.
+  
+  Scheduled work is part of the call that scheduled it. It still checks the agent's grant, the person and their role, so turning the agent off or disconnecting the host stops it.
+
+- [#306](https://github.com/lupinum-dev/better-convex/pull/306) [`e7c9f87`](https://github.com/lupinum-dev/better-convex/commit/e7c9f87510dc41d27dd665e738cfea18e6102e31) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change an agent's call that changes data and has no agent rule to wait for a person, and let `ctx.scheduler.cancel` cancel only the caller's own jobs.
+  
+  Before, a mutation, action or internal mutation without an entry in `definePolicy({ agents })` ran for an agent on its own. A query without an entry still runs. The tool catalog shows such a write tool with `approval: 'always'`.
+  `ctx.scheduler.cancel` fails with `NOT_FOUND` for a job that another person or agent scheduled. An action cancels only the jobs it scheduled in the same call.
+  Migration: give `'allow'` to each write action that agents may run on their own, also to an internal mutation that an allowed tool runs.
+
+- [#313](https://github.com/lupinum-dev/better-convex/pull/313) [`e139ba6`](https://github.com/lupinum-dev/better-convex/commit/e139ba62e09fd67fe829c7ac5c03ad1aaef93d8a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix approved work accepting a tool or input other than the one the person approved, while the approval runs.
+
+- [#299](https://github.com/lupinum-dev/better-convex/pull/299) [`1970336`](https://github.com/lupinum-dev/better-convex/commit/19703362092e79e75e4f54a38be1b2187cfa715c) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a scheduled follow-up of the same action taking a second rate-limit token.
+  
+  `ctx.scheduler.runAfter` and `runAt` pass on the buckets the call already paid, and an internal action passes them to the mutations it runs. A follow-up of another action or tenant still pays its own token. A chain that schedules itself again pays once per request.
+
+- [#313](https://github.com/lupinum-dev/better-convex/pull/313) [`e139ba6`](https://github.com/lupinum-dev/better-convex/commit/e139ba62e09fd67fe829c7ac5c03ad1aaef93d8a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix an approval summary showing a `www.` address or an email address as a link in a host that renders markdown.
+
+- [#313](https://github.com/lupinum-dev/better-convex/pull/313) [`e139ba6`](https://github.com/lupinum-dev/better-convex/commit/e139ba62e09fd67fe829c7ac5c03ad1aaef93d8a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a tool dropping `null` for an optional field that accepts `null`, so a model could not clear the field. A `null` for a field that cannot be `null` still means the field is left out.
+
+- [#303](https://github.com/lupinum-dev/better-convex/pull/303) [`1aef2f1`](https://github.com/lupinum-dev/better-convex/commit/1aef2f1dc39a40d4b2da48e5449350f5f769536a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a tool whose module is not passed to `defineTools` being left out of the tool list without a word.
+  
+  `launchProblems` now names each operation with a `tool` that no exported `defineTools` result collected, with the module, the export, the tool name and the fix.
+
+- [#313](https://github.com/lupinum-dev/better-convex/pull/313) [`e139ba6`](https://github.com/lupinum-dev/better-convex/commit/e139ba62e09fd67fe829c7ac5c03ad1aaef93d8a) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a `trustedRoutes` prefix such as `/api/auth` also vouching for `/api/authz/…` in `unguardedFunctions` and `launchProblems`. A prefix now covers whole path segments.
+
 ## 0.1.0-rc.4
 
 ### Minor Changes
