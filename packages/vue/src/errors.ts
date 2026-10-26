@@ -513,10 +513,12 @@ const loggedCauses = new WeakSet<object>()
  * The public error drops the original on purpose (no `cause`, nothing in the
  * SSR payload), so in development the original is logged once instead.
  * Without it, a client-side argument error (`convexToJson`) or a plain server
- * `Error` would leave no trace.
+ * `Error` would leave no trace. `undefined` and `null` have no original to
+ * show; they usually come from code that normalizes an error that is not
+ * there, such as an `error` ref before any failure.
  */
 function logUnknownCauseInDevelopment(error: unknown, functionName: string | undefined): void {
-  if (!isDevelopment()) return
+  if (!isDevelopment() || error === undefined || error === null) return
   if (typeof error === 'object' && error !== null) {
     if (loggedCauses.has(error)) return
     loggedCauses.add(error)

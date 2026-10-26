@@ -436,6 +436,9 @@ describe('normalizeConvexError shows the dropped cause in development only (#180
     { env: 'production', thrown: new TypeError('Ref is not a supported Convex type'), logs: 0 },
     { env: 'test', thrown: new TypeError('Ref is not a supported Convex type'), logs: 0 },
     { env: 'development', thrown: new ConvexError({ code: 'FORBIDDEN' }), logs: 0 },
+    // An absent error, such as an `error` ref before any failure, has nothing to show.
+    { env: 'development', thrown: undefined, logs: 0 },
+    { env: 'development', thrown: null, logs: 0 },
   ])('NODE_ENV=$env, $thrown.name: $logs log line(s)', ({ env, thrown, logs }) => {
     vi.stubEnv('NODE_ENV', env)
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
