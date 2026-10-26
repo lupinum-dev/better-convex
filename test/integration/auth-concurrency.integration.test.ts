@@ -61,7 +61,8 @@ const authOrigin = 'http://localhost:3050'
 // The WebSocket admission close was reviewed against this backend source commit
 // (precompiled-2026-09-28: crates/sync/src/worker.rs and crates/application/src/api.rs reject
 // non-root component paths for non-admin identities before execution, unchanged since 44f7aa7).
-const admissionGuardSourceCommit = '5c7cb5bc7db457290f1769f95f1d1340912f7fd7'
+// precompiled-2026-10-10-72ce13c has both files byte-identical to 5c7cb5b (same git blobs).
+const admissionGuardSourceCommit = '72ce13c379fe6dbdfc305bc8ad699c5663c68c2a'
 const totalRequests = 200
 const lanes = 20
 const iterations = totalRequests / lanes

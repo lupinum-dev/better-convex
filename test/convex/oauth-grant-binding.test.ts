@@ -97,6 +97,7 @@ function createAuth(ctx: GenericActionCtx<GenericDataModel>) {
       '/oauth2/get-client',
       '/oauth2/get-clients',
       '/oauth2/update-client',
+      '/oauth2/client/rotate-keys',
       '/oauth2/client/rotate-secret',
       '/oauth2/delete-client',
     ],

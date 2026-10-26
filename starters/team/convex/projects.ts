@@ -1,5 +1,4 @@
 import { calculateRateLimit } from '@convex-dev/rate-limiter'
-import type { RateLimitConfig } from '@convex-dev/rate-limiter'
 import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 
@@ -24,11 +23,7 @@ function formatRetryDuration(ms: number) {
   return `${minutes}m ${seconds}s`
 }
 
-function projectCreateRateLimitStatus(snapshot: {
-  value: number
-  ts: number
-  config: RateLimitConfig
-}) {
+function projectCreateRateLimitStatus(snapshot: Awaited<ReturnType<typeof rateLimiter.getValue>>) {
   const checked = calculateRateLimit(
     { value: snapshot.value, ts: snapshot.ts },
     snapshot.config,

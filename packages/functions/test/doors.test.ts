@@ -146,12 +146,14 @@ test.each(forDoors)(
 test.each(forDoors)('limit on %s: 2 calls pass, the 3rd is RATE_LIMITED', async (_name, door) => {
   const { t, ann, pa, name, buckets } = await setup()
   const tokens = async () => (await buckets()).map((row) => row.tokens)
+  // convex-test's clock runs at least 1 ms per commit, even with fake timers: a spent bucket refills a sliver.
+  const spent = expect.closeTo(0, 2)
   expect(await attempt(t, ann, door, { projectId: pa, name: 'n1' })).toBe('ok')
   expect(await tokens()).toEqual([1])
   expect(await attempt(t, ann, door, { projectId: pa, name: 'n2' })).toBe('ok')
-  expect(await tokens()).toEqual([0])
+  expect(await tokens()).toEqual([spent])
   expect(await attempt(t, ann, door, { projectId: pa, name: 'n3' })).toBe('RATE_LIMITED')
-  expect(await tokens()).toEqual([0])
+  expect(await tokens()).toEqual([spent])
   expect(await name(pa)).toBe('n2')
   expect((await buckets()).map((row) => row.key)).toEqual([
     expect.stringMatching(/^person:[^|]+\|limit:projects\.guard$/),

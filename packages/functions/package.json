@@ -41,7 +41,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "convex": "1.42.2",
+    "convex": "1.48.0",
     "typescript": "~5.9.3",
     "unbuild": "3.6.1"
   },

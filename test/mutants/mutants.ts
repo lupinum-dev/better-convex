@@ -4959,6 +4959,6 @@ export const equivalents: Equivalent[] = [
     find: 'disableIdTokenSignIn: true,',
     replace: 'disableIdTokenSignIn: false,',
     reason:
-      'The provider has no idToken config and no verifyIdToken, so Better Auth 1.7.7 refuses id-token sign-in either way (F7). The field is defence in depth against a Better Auth change; the e2e tests "refuses client-submitted id_token sign-in" and "… at link-social" still run.',
+      'The provider has no idToken config and no verifyIdToken, so Better Auth 1.7.12 refuses id-token sign-in either way (F7). The field is defence in depth against a Better Auth change; the e2e tests "refuses client-submitted id_token sign-in" and "… at link-social" still run.',
   },
 ]

@@ -19,11 +19,11 @@
     "verify:full": "pnpm verify:release && pnpm verify:browser"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.7",
-    "@convex-dev/rate-limiter": "^0.3.2",
+    "@better-auth/oauth-provider": "1.7.12",
+    "@convex-dev/rate-limiter": "^0.4.2",
     "@lupinum/better-convex-nuxt": "1.0.0-rc.6",
-    "better-auth": "1.7.7",
-    "convex": "1.42.2",
+    "better-auth": "1.7.12",
+    "convex": "1.48.0",
     "nuxt": "4.6.2",
     "vue": "3.5.44",
     "zod": "4.6.7"
@@ -32,7 +32,7 @@
     "@edge-runtime/vm": "^5.0.0",
     "@nuxt/schema": "4.6.1",
     "@types/node": "^25.0.0",
-    "convex-test": "^0.0.41",
+    "convex-test": "^0.0.65",
     "playwright": "^1.64.0",
     "typescript": "~5.9.3",
     "vite": "8.3.4",

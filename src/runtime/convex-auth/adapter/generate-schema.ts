@@ -95,7 +95,15 @@ const explicitIndexes: Readonly<Record<string, readonly AuthIndexDeclaration[]>>
     { fields: ['organizationId', 'status', 'createdAt'] },
   ],
   member: [{ fields: ['organizationId', 'userId'], unique: true }],
-  oauthConsent: [{ fields: ['clientId', 'userId'] }, { fields: ['userId', 'createdAt'] }],
+  // The OAuth provider (1.7.10+) pages one user's consents for a client by id
+  // to find the consent without a reference. It asks for a second page (an
+  // offset the adapter refuses) only after 100 consents with a reference, and
+  // this library never sets `consentReferenceId`.
+  oauthConsent: [
+    { fields: ['clientId', 'userId'] },
+    { fields: ['clientId', 'userId', 'id'] },
+    { fields: ['userId', 'createdAt'] },
+  ],
   // Refresh-family invalidation selects one (client, user) pair.
   oauthRefreshToken: [{ fields: ['clientId', 'userId'] }],
   rateLimit: [{ fields: ['key'] }, { fields: ['lastRequest'] }],
@@ -253,7 +261,8 @@ function buildMetadata(tables: BetterAuthDBSchema): AuthSchemaMetadata {
         kind: 'string',
         nullable: false,
         indexed: true,
-        sortable: false,
+        // The stable key Better Auth pages by; every model already indexes it.
+        sortable: true,
         unique: true,
         updatable: false,
       },

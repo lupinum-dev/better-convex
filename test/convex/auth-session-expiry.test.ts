@@ -172,8 +172,10 @@ describe('component session expiry scheduler', () => {
       expect(
         await test.query(auth.sessionAdmission, { sessionId: 'session-0', userId: data.userId }),
       ).toBeNull()
-      await advance(test, 0)
-      await advance(test, 0)
+      // A second, not 0: convex-test's clock runs ahead of the frozen one (at least
+      // 1 ms per commit), so each runAfter(0) batch lands a little later.
+      await advance(test, 1_000)
+      await advance(test, 1_000)
       expect(await test.run((ctx) => ctx.db.query('session').take(200))).toEqual([])
     },
   )

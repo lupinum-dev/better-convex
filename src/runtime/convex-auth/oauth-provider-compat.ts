@@ -20,6 +20,7 @@ export const DISABLED_PINNED_PROVIDER_PATHS = new Set([
   '/get-access-token',
   '/refresh-token',
   '/.well-known/openid-configuration',
+  '/oauth2/client/rotate-keys',
   '/oauth2/client/rotate-secret',
   '/oauth2/create-client',
   '/oauth2/delete-client',

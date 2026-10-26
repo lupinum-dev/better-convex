@@ -131,7 +131,9 @@ function setup(
     expect(Object.isFrozen(message)).toBe(true)
     return message
   }
-  return { test, auth, request, signUp, email, delivered }
+  // The signed-in person's cookie, for calling the auth API directly.
+  const sessionHeaders = () => new Headers({ cookie, origin: 'https://app.example.test' })
+  return { test, auth, request, signUp, email, delivered, sessionHeaders }
 }
 
 describe('typed email delivery with real Better Auth', () => {
@@ -146,17 +148,21 @@ describe('typed email delivery with real Better Auth', () => {
   })
 
   it('constructs query auth but refuses email delivery from a query context', async () => {
-    const { test, auth, signUp, email } = setup('links')
+    const { test, auth, request, signUp, email, sessionHeaders } = setup('links')
     await signUp()
+    await request('/sign-in/email', { email: 'person@example.test', password })
     await test.query(async (ctx) => {
       const instance = await auth.createAuth(ctx)
       expect(instance).toBeDefined()
+      // Signed in: an anonymous request first waits out Better Auth's 500 ms
+      // timing floor, and Convex has no timers in a query.
       await expect(
         instance.api.sendVerificationEmail({
           body: {
             email: 'person@example.test',
             callbackURL: 'https://app.example.test/verified',
           },
+          headers: sessionHeaders(),
         }),
       ).rejects.toThrow(/^AUTH_EMAIL_REQUIRES_WRITABLE_CONTEXT$/)
     })

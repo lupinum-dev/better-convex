@@ -700,8 +700,9 @@ describe('factory MCP wiring', () => {
   it('wires the MCP door in one call, and signing out disconnects the host', async () => {
     const { test, key } = await initGrant()
     const token = await signAccessToken(key)
+    // An action, like the HTTP action that serves the MCP route in production.
     const toolsList = () =>
-      test.query(async (ctx) => {
+      test.action(async (ctx) => {
         const response = await handleMcpRequest(
           new Request(resource, {
             method: 'POST',

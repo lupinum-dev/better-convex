@@ -13,19 +13,19 @@
     "verify": "pnpm test && pnpm convex:codegen && pnpm typecheck && pnpm build"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.12",
     "@lupinum/better-convex-agents": "0.1.0-rc.4",
     "@lupinum/better-convex-functions": "0.1.0-rc.4",
     "@lupinum/better-convex-nuxt": "1.0.0-rc.6",
     "@modelcontextprotocol/server": "2.3.1",
-    "better-auth": "1.7.7",
-    "convex": "1.42.2",
+    "better-auth": "1.7.12",
+    "convex": "1.48.0",
     "nuxt": "4.6.2",
     "vue": "3.5.44"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
-    "convex-test": "^0.0.54",
+    "convex-test": "^0.0.65",
     "typescript": "~5.9.3",
     "vite": "8.3.4",
     "vitest": "^4.1.12",

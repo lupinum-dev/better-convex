@@ -1,5 +1,5 @@
-import { verifyJwsAccessToken } from 'better-auth/oauth2'
 import { getFunctionAddress, type GenericDataModel } from 'convex/server'
+import { createLocalJWKSet, jwtVerify } from 'jose'
 
 import type { AuthCtx } from './context'
 import {
@@ -237,28 +237,29 @@ export async function verifyOAuthBearerToken<DataModel extends GenericDataModel>
   const verification = prepareOAuthAccessTokenVerification(options)
   const keys = (await readVerificationKeys(ctx, component, kid)).filter((key) => key.kid === kid)
   if (keys.length !== 1) invalidToken()
+  // jose directly, not Better Auth's verifyJwsAccessToken: since 1.7.8 that one
+  // races its key fetch against a timer, and Convex queries and mutations have
+  // no timers. The keys are already local, so there is nothing to fetch.
+  const keySet = createLocalJWKSet({
+    keys: keys.map((key) => ({ ...key.jwk, alg: 'RS256', kid: key.kid, use: 'sig' })),
+  })
   try {
-    await verifyJwsAccessToken(token, {
-      jwksFetch: async () => ({
-        keys: keys.map((key) => ({ ...key.jwk, alg: 'RS256', kid: key.kid, use: 'sig' })),
-      }),
-      verifyOptions: {
-        algorithms: ['RS256'],
-        audience: options.audience,
-        clockTolerance: 0,
-        currentDate: verification.currentDate,
-        issuer: options.issuer,
-        maxTokenAge: `${maxLifetimeSeconds}s`,
-        typ: 'at+jwt',
-      },
+    await jwtVerify(token, keySet, {
+      algorithms: ['RS256'],
+      audience: options.audience,
+      clockTolerance: 0,
+      currentDate: verification.currentDate,
+      issuer: options.issuer,
+      maxTokenAge: `${maxLifetimeSeconds}s`,
+      typ: 'at+jwt',
     })
   } catch {
     invalidToken()
   }
 
-  // The official verifier normalizes `client_id` from `azp` on its returned
-  // payload. Re-read the now signature-verified compact bytes so a conflicting
-  // signed client_id (or another raw unknown claim) cannot be hidden.
+  // Re-read the now signature-verified compact bytes, not a verifier's
+  // normalized payload, so a conflicting signed client_id (or another raw
+  // unknown claim) cannot be hidden.
   return verification.assert(decodeSegment(token, 1))
 }
 

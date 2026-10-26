@@ -82,7 +82,9 @@ release, recorded with its archive and binary SHA-256 in
 `test/helpers/local-backend.json`. `ensureLocalBackend()` downloads and verifies
 it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
 never fetches an unreviewed binary. The manifest's `convexVersion` must equal the
-`convex` dev dependency; bump both together.
+`convex` dev dependency; bump both together. Pin the backend that
+`https://version.convex.dev/v1/local_backend_version` names for that CLI, which
+is the one `convex dev --local` would install.
 
 `test/helpers/local-convex.ts` owns backend startup, local selection, environment
 writes, deployment readiness and backend cleanup for both suites. E2E keeps its
@@ -102,8 +104,9 @@ functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
   client disable/delete, consent), `mcp:write` step-up, and the stateless MCP
   protocol envelope through the official client SDK.
 - `oauth-code`: a concurrent double redemption has one winner; replay,
-  wrong PKCE, another client, a wrong Basic secret and a post-consume signing
-  fault burn the code without persisting a token; no credential in browser storage.
+  wrong PKCE, another client and a post-consume signing fault burn the code
+  without persisting a token; a wrong Basic secret mints nothing and leaves the
+  code for one later redemption with the right secret; no credential in browser storage.
 - `mcp-sizes`: the door's 1 MiB response limit (found by search, for each kind of
   escaped character and a very long JSON-RPC id: whole just under, the marker just
   over, never HTTP 502), a write that retries after an oversized result, an

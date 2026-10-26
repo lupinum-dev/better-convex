@@ -77,7 +77,7 @@ If you already run the release candidate, check only these:
       and `@lupinum/better-convex-functions@next` (they replace `@lupinum/better-convex-mcp`).
       The `next` dist-tag is the 1.0 release candidate.
 - [ ] With auth, install `better-auth`, `@better-auth/core`, and
-      `@better-auth/oauth-provider` at exactly `1.7.7`, even without MCP.
+      `@better-auth/oauth-provider` at exactly `1.7.12`, even without MCP.
 - [ ] With MCP, install `@modelcontextprotocol/server@2.3.1`; MCP Apps use
       `@modelcontextprotocol/ext-apps` `2.x`.
 - [ ] The auth component `account` table is keyed by `(providerId, accountId)`.

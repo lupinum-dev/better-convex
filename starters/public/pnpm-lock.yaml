@@ -10,10 +10,10 @@ importers:
     dependencies:
       '@lupinum/better-convex-nuxt':
         specifier: 1.0.0-rc.6
-        version: 1.0.0-rc.6(3da1a9150bc3b835a186bea409ae5b30)
+        version: 1.0.0-rc.6(1413f51c1351d7ceb88e00958a13ca24)
       convex:
-        specifier: 1.42.2
-        version: 1.42.2
+        specifier: 1.48.0
+        version: 1.48.0
       nuxt:
         specifier: 4.6.2
         version: 4.6.2(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7(supports-color@10.2.2)))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7(supports-color@10.2.2)))(@oxc-project/types@0.153.0)(@types/node@25.9.9)(@vue/compiler-sfc@3.5.44)(acorn@8.19.0)(confbox@0.3.1)(db0@0.3.4)(dotenv@17.4.2)(esbuild@0.28.2)(giget@3.3.1)(ioredis@5.11.1(supports-color@10.2.2))(lightningcss@1.33.0)(mlly@1.8.2)(rolldown@1.2.13)(rollup-plugin-visualizer@7.1.1(rolldown@1.2.13)(rollup@4.64.5))(rollup@4.64.5)(srvx@1.0.5)(supports-color@10.2.2)(terser@5.51.2)(typescript@5.9.3)(vite@8.3.4(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2))(vue-tsc@3.3.13(typescript@5.9.3))
@@ -25,8 +25,8 @@ importers:
         specifier: ^25.0.0
         version: 25.9.9
       convex-test:
-        specifier: ^0.0.41
-        version: 0.0.41(convex@1.42.2)
+        specifier: ^0.0.65
+        version: 0.0.65(convex@1.48.0)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1592,14 +1592,14 @@ packages:
       zod:
         optional: true
 
-  convex-test@0.0.41:
-    resolution: {integrity: sha512-GPHeYFOi70n7UtW0eCEQFVhzl/+m8PvbWkDCbKpHLybI1MrScf4sVpGeM0cC2qmtxiduxa2nLPbehPalhh9oyQ==}
+  convex-test@0.0.65:
+    resolution: {integrity: sha512-2FgHlLGraM2O3tEVpOfvoHSleK0x92J8xjQ/qClWzNJX3NcmgvuNeWBrmma7sLJ8lB3ENPxx6ykJTfvZmWg3BQ==}
     peerDependencies:
-      convex: ^1.16.4
+      convex: ^1.43.0
 
-  convex@1.42.2:
-    resolution: {integrity: sha512-5Mo9EZQ45bG2nbhO7NhTTw5GF9g4RA/kgRQviUQrOI+wFCyfdeNw3PjgOZc2eOM4ruum+0QmUcvVCX5mT2v4rg==}
-    engines: {node: '>=18.0.0', npm: '>=7.0.0'}
+  convex@1.48.0:
+    resolution: {integrity: sha512-M9jEgTvCN8ziP/VgQQUH+j0ijM7g+NmQd8tFlvETK8/HMC/aaqHZwcu4hBO30X5DV2VIyYK4mOoLQGIb1766ew==}
+    engines: {node: '>=20.0.0', npm: '>=7.0.0'}
     hasBin: true
     peerDependencies:
       '@auth0/auth0-react': ^2.0.1
@@ -3987,12 +3987,12 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@lupinum/better-convex-nuxt@1.0.0-rc.6(3da1a9150bc3b835a186bea409ae5b30)':
+  '@lupinum/better-convex-nuxt@1.0.0-rc.6(1413f51c1351d7ceb88e00958a13ca24)':
     dependencies:
-      '@lupinum/better-convex-vue': 1.0.0-rc.6(convex@1.42.2)(vue@3.5.44(typescript@5.9.3))
+      '@lupinum/better-convex-vue': 1.0.0-rc.6(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))
       '@nuxt/kit': 4.6.1(@nuxt/schema@4.6.2)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.13)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.13)(rollup@4.64.5)(vite@8.3.4(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))
-      convex: 1.42.2
-      convex-helpers: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3)
+      convex: 1.48.0
+      convex-helpers: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)
       defu: 6.1.7
       jiti: 2.7.0
       nuxt: 4.6.2(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7(supports-color@10.2.2)))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7(supports-color@10.2.2)))(@oxc-project/types@0.153.0)(@types/node@25.9.9)(@vue/compiler-sfc@3.5.44)(acorn@8.19.0)(confbox@0.3.1)(db0@0.3.4)(dotenv@17.4.2)(esbuild@0.28.2)(giget@3.3.1)(ioredis@5.11.1(supports-color@10.2.2))(lightningcss@1.33.0)(mlly@1.8.2)(rolldown@1.2.13)(rollup-plugin-visualizer@7.1.1(rolldown@1.2.13)(rollup@4.64.5))(rollup@4.64.5)(srvx@1.0.5)(supports-color@10.2.2)(terser@5.51.2)(typescript@5.9.3)(vite@8.3.4(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2))(vue-tsc@3.3.13(typescript@5.9.3))
@@ -4014,10 +4014,10 @@ snapshots:
       - vue
       - zod
 
-  '@lupinum/better-convex-vue@1.0.0-rc.6(convex@1.42.2)(vue@3.5.44(typescript@5.9.3))':
+  '@lupinum/better-convex-vue@1.0.0-rc.6(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       '@standard-schema/spec': 1.1.0
-      convex: 1.42.2
+      convex: 1.48.0
       ohash: 2.0.12
       vue: 3.5.44(typescript@5.9.3)
 
@@ -5212,18 +5212,18 @@ snapshots:
 
   convert-source-map@2.0.0: {}
 
-  convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.2)(typescript@5.9.3):
+  convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3):
     dependencies:
-      convex: 1.42.2
+      convex: 1.48.0
     optionalDependencies:
       '@standard-schema/spec': 1.1.0
       typescript: 5.9.3
 
-  convex-test@0.0.41(convex@1.42.2):
+  convex-test@0.0.65(convex@1.48.0):
     dependencies:
-      convex: 1.42.2
+      convex: 1.48.0
 
-  convex@1.42.2:
+  convex@1.48.0:
     dependencies:
       esbuild: 0.27.0
       prettier: 3.9.10
