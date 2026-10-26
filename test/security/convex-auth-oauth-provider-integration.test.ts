@@ -43,6 +43,7 @@ const disabledPaths = [
   '/oauth2/get-client',
   '/oauth2/get-clients',
   '/oauth2/update-client',
+  '/oauth2/client/rotate-keys',
   '/oauth2/client/rotate-secret',
   '/oauth2/delete-client',
 ]
@@ -377,14 +378,17 @@ describe('pinned OAuth provider lifecycle and pre-provider barrier', () => {
     expect((await readComponentRateLimits(db))[0]).toMatchObject({ count: 3 })
   })
 
-  it('lets a safe Basic profile reach the official consume boundary without checking its secret early', async () => {
+  it('lets a safe Basic profile reach the official client check without checking its secret early', async () => {
     const auth = createAuth(database())
     const response = await auth.handler(
       tokenRequest(authorizationCodeBody(), `Basic ${btoa('client-1:wrong-secret')}`),
     )
-    const body = (await response.json()) as { error?: string }
-    expect(response.status).toBe(400)
-    expect(body.error).toBe('invalid_grant')
+    // The description comes from the provider; the barrier's own refusal has none.
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid_client',
+      error_description: 'invalid client_secret',
+    })
   })
 
   it('lets an exact public-none client reach code consumption with body client_id and no secret', async () => {

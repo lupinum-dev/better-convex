@@ -127,7 +127,7 @@ const actionCtx = [
 ]
 /** `ctx.db` with the row rules. Queries list the write methods too; Convex's query db has none, so they throw. */
 const checkedDb = ['delete', 'get', 'insert', 'normalizeId', 'patch', 'query', 'replace', 'system']
-/** A job's db: the system's, without rules. */
+/** A job's db: the system's, without rules. `vars` is Convex's own (1.48+); `checkedDb` keeps its fixed list. */
 const systemDb = [
   'delete',
   'get',
@@ -138,6 +138,7 @@ const systemDb = [
   'replace',
   'system',
   'table',
+  'vars',
 ]
 const readDb = ['get', 'normalizeId', 'query', 'system']
 const ruleCtx = ['action', 'actor', 'allows', 'db', 'mode', 'roleIn', 'tenant']

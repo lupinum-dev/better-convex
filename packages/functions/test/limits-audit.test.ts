@@ -72,7 +72,9 @@ test('tokens refill over time', async () => {
   const { t, ann, pa } = await setup()
   const rename = (name: string) => ann.mutation(fn('rename'), { projectId: pa, name })
   for (const name of ['1', '2', '3']) await rename(name)
-  vi.advanceTimersByTime(10_000)
+  // Half a second past each mark: convex-test's clock runs a few ms ahead of a frozen one
+  // (at least 1 ms per commit), and the wait is rounded up to whole seconds.
+  vi.advanceTimersByTime(10_500)
   await expect(rename('early')).rejects.toThrow(/Try again in 10 seconds/)
   vi.advanceTimersByTime(10_000)
   await rename('after 20s')
@@ -309,8 +311,9 @@ test.each(['guardLater', 'guardLaterViaAction'])(
       await t.finishAllScheduledFunctions(vi.runAllTimers)
       expect(await t.run((ctx) => ctx.db.get(pa))).toMatchObject({ name })
     }
+    // A spent bucket: convex-test's clock runs at least 1 ms per commit, so it refills a sliver.
     expect((await buckets()).map((row) => [row.key.split('|')[1], row.tokens])).toEqual([
-      ['limit:projects.guard', 0],
+      ['limit:projects.guard', expect.closeTo(0, 2)],
     ])
     // The request itself still pays: the third is refused.
     await expect(ann.mutation(fn(outer), { projectId: pa, name: 'n3' })).rejects.toThrow(
@@ -333,8 +336,8 @@ test('a scheduled follow-up of another limited action pays its own token', async
     logged.mock.calls.flat().map((arg) => (arg as { data?: { code?: string } } | null)?.data?.code),
   ).toContain('RATE_LIMITED')
   expect((await buckets()).map((row) => [row.key.split('|')[1], row.tokens])).toEqual([
-    ['limit:projects.guard', 0],
-    ['limit:tasks.run', 0],
+    ['limit:projects.guard', expect.closeTo(0, 2)],
+    ['limit:tasks.run', expect.closeTo(0, 2)],
   ])
   logged.mockRestore()
 })

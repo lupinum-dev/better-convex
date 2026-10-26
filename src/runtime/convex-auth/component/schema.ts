@@ -222,6 +222,7 @@ export const tables = {
   })
     .index("id", ["id"])
     .index("clientId_userId", ["clientId","userId"])
+    .index("clientId_userId_id", ["clientId","userId","id"])
     .index("userId_createdAt", ["userId","createdAt"])
     .index("clientId", ["clientId"])
     .index("userId", ["userId"])
@@ -246,7 +247,7 @@ export const tables = {
 const schema = defineSchema(tables)
 // prettier-ignore
 Object.defineProperty(schema, '__betterConvexNuxtAuthSchemaFingerprint', {
-  value: "bcn-auth-schema-v2:573a92e4296c409a",
+  value: "bcn-auth-schema-v2:c85532c67939aa35",
 })
 
 export default schema

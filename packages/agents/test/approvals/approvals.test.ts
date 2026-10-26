@@ -1015,7 +1015,10 @@ test('housekeeping goes through every waiting run, in batches', async () => {
   // Third review: every continuation keeps the scan's first cutoff, or Convex rejects its cursor.
   const scan = steps.filter((step) => typeof step.waiting === 'string')
   expect(scan.length).toBeGreaterThan(1)
-  expect(new Set(scan.map((step) => step.cutoff))).toEqual(new Set([Date.now() - 60_000]))
+  const cutoffs = new Set(scan.map((step) => step.cutoff))
+  expect(cutoffs.size).toBe(1)
+  // convex-test's clock runs a few ms ahead of the frozen one (at least 1 ms per commit).
+  expect([...cutoffs][0]).toBeCloseTo(Date.now() - 60_000, -3)
   const waiting = await s.t.run((ctx) =>
     ctx.db
       .query('agentRuns')

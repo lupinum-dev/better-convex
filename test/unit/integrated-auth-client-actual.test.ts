@@ -13,7 +13,7 @@ import {
 } from '../../src/runtime/auth/session-synchronization'
 
 /**
- * Pins change detection to the real Better Auth 1.7.7 client: every request
+ * Pins change detection to the real Better Auth 1.7.12 client: every request
  * outside the known read-only routes, plus Better Auth's own `$sessionSignal`,
  * decides which calls reconcile, so read-only calls never refetch the session
  * or mint a token while session changes the signal misses still reconcile.
@@ -63,7 +63,7 @@ function createHarness() {
         case '/organization/list-members':
           return Response.json({ message: 'boom' }, { status: 500 })
         case '/organization/get-full-organization':
-          // Better Auth 1.7.7 clears a non-member's active organization on the
+          // Better Auth 1.7.12 clears a non-member's active organization on the
           // session before it answers 403 (plugins/organization/routes/crud-org).
           activeOrganizationId = null
           return Response.json(
@@ -142,7 +142,7 @@ function createHarness() {
 
 type Client = ReturnType<typeof createHarness>['integrated']
 
-describe('integrated client against pinned Better Auth 1.7.7', () => {
+describe('integrated client against pinned Better Auth 1.7.12', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })

@@ -3,7 +3,7 @@
 Status: build spec for branch `feat/oidc-sign-in`, revision 2. Revision 2 applies the security and
 API reviews; the table "Addressed review findings" at the end gives the decision for each finding.
 Decisions in `plan.md` are fixed. This document adds the exact shapes. Better Auth (BA) and
-`@better-auth/core` are pinned at 1.7.7.
+`@better-auth/core` are pinned at 1.7.12.
 
 Path shorthands used below:
 

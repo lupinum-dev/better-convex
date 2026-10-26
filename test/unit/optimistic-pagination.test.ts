@@ -6,7 +6,6 @@ import {
   type PaginationOptions,
   type PaginationResult,
   type FunctionArgs,
-  type FunctionReference,
   type FunctionReturnType,
   type OptionalRestArgs,
 } from 'convex/server'
@@ -88,21 +87,21 @@ async function loadList(folder = 'inbox', options?: { pending?: boolean; cursor?
   return entries
 }
 
+// Whatever query reference the store accepts (Convex 1.48 adds `FunctionReference_future`).
+type StoreQuery = Parameters<OptimisticLocalStore['getQuery']>[0]
+
 function localStore(entries: Array<{ args: Args; value: Page | undefined }>): OptimisticLocalStore {
   const key = (args: unknown) => JSON.stringify(args)
   const values = new Map(entries.map((entry) => [key(entry.args), entry]))
   return {
-    getQuery<Query extends FunctionReference<'query'>>(
-      query: Query,
-      ...args: OptionalRestArgs<Query>
-    ) {
+    getQuery<Query extends StoreQuery>(query: Query, ...args: OptionalRestArgs<Query>) {
       return (
         getFunctionName(query) === getFunctionName(pageNotes)
           ? values.get(key(args[0]))?.value
           : undefined
       ) as FunctionReturnType<Query> | undefined
     },
-    getAllQueries<Query extends FunctionReference<'query'>>(query: Query) {
+    getAllQueries<Query extends StoreQuery>(query: Query) {
       // The store holds only this test's typed page query; the interface is generic.
       return (
         getFunctionName(query) === getFunctionName(pageNotes) ? [...values.values()] : []

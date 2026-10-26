@@ -99,22 +99,27 @@ describe('auth component limits', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(1_700_000_000_000)
     const test = convexTest(schema, authModules)
-    const consume = () =>
-      test.mutation(api.adapter.consumeRateLimit, {
+    // Each request at its own ms, as on a real clock: two commits in one frozen ms
+    // push convex-test's clock 1 ms ahead, and this test counts single ms.
+    const at = (ms: number) => {
+      vi.setSystemTime(1_700_000_000_000 + ms)
+      return test.mutation(api.adapter.consumeRateLimit, {
         key: '192.0.2.12|/email-otp',
         max: 3,
         window: 10,
         retentionWindow: 60,
       })
-    for (let request = 1; request <= 3; request++) await consume()
-    vi.advanceTimersByTime(7_000)
-    // Two requests drained by now, so the bucket holds one and admits two more.
-    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
-    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
-    const refused = await consume()
+    }
+    for (const ms of [0, 1, 2]) await at(ms)
+    // Two requests drained by 7 s, so the bucket holds one and admits two more.
+    expect(await at(6_998)).toEqual({ allowed: true, retryAfter: null })
+    expect(await at(6_999)).toEqual({ allowed: true, retryAfter: null })
+    const refused = await at(7_000)
     expect(refused.allowed).toBe(false)
-    vi.advanceTimersByTime((refused.retryAfter ?? 0) * 1_000)
-    expect(await consume()).toEqual({ allowed: true, retryAfter: null })
+    expect(await at(7_000 + (refused.retryAfter ?? 0) * 1_000)).toEqual({
+      allowed: true,
+      retryAfter: null,
+    })
   })
 
   it('A01 removes 300 stale rate limits and one-time keys after a burst', async () => {
@@ -150,8 +155,10 @@ describe('auth component limits', () => {
       window: 10,
       retentionWindow: 60,
     })
+    // The next batch, not "now": convex-test's clock runs ahead of the frozen one
+    // (at least 1 ms per commit), so runAfter(0) lands a few hundred ms later.
     for (let batch = 0; batch < 3; batch++) {
-      vi.advanceTimersByTime(0)
+      vi.advanceTimersToNextTimer()
       await test.finishInProgressScheduledFunctions()
     }
     expect(await test.query(adapter.count, { model: 'rateLimit' })).toBe(11)

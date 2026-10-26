@@ -82,7 +82,9 @@ release, recorded with its archive and binary SHA-256 in
 `test/helpers/local-backend.json`. `ensureLocalBackend()` downloads and verifies
 it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
 never fetches an unreviewed binary. The manifest's `convexVersion` must equal the
-`convex` dev dependency; bump both together.
+`convex` dev dependency; bump both together. Pin the backend that
+`https://version.convex.dev/v1/local_backend_version` names for that CLI, which
+is the one `convex dev --local` would install.
 
 `test/helpers/local-convex.ts` owns backend startup, local selection, environment
 writes, deployment readiness and backend cleanup for both suites. E2E keeps its

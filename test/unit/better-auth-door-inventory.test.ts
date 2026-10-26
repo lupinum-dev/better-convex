@@ -20,9 +20,9 @@ const FIX_HINT =
   'Classify the new route in the door inventory (can it create a session, link/delete an account, change a password or email?), review the guards in oidc-plugin.ts and disabledPaths, then update the list in test/unit/better-auth-door-inventory.test.ts.'
 
 const REVIEWED_VERSIONS = {
-  'better-auth': '1.7.7',
-  '@better-auth/core': '1.7.7',
-  '@better-auth/oauth-provider': '1.7.7',
+  'better-auth': '1.7.12',
+  '@better-auth/core': '1.7.12',
+  '@better-auth/oauth-provider': '1.7.12',
 }
 
 // Reachable endpoints of an instance with every reviewed option on. twoFactor cannot be combined
@@ -128,11 +128,6 @@ const CALL_SITES: Record<string, Record<string, number>> = {
     updateAccount: 3,
   },
   'better-auth/api/routes/email-verification.mjs': { createSession: 3 },
-  'better-auth/api/routes/password.mjs': {
-    createAccount: 1,
-    deleteUserSessions: 1,
-    updatePassword: 1,
-  },
   'better-auth/api/routes/session.mjs': {
     deleteSession: 3,
     deleteUserSessions: 1,
@@ -173,20 +168,10 @@ const CALL_SITES: Record<string, Record<string, number>> = {
     deleteUserSessions: 1,
   },
   'better-auth/plugins/device-authorization/routes.mjs': { createSession: 1 },
-  'better-auth/plugins/email-otp/routes.mjs': {
-    createAccount: 1,
-    createSession: 3,
-    deleteUserSessions: 1,
-    updatePassword: 1,
-  },
+  'better-auth/plugins/email-otp/routes.mjs': { createSession: 3 },
   'better-auth/plugins/magic-link/index.mjs': { createSession: 1 },
   'better-auth/plugins/multi-session/index.mjs': { deleteSession: 1 },
-  'better-auth/plugins/phone-number/routes.mjs': {
-    createAccount: 1,
-    createSession: 2,
-    deleteUserSessions: 1,
-    updatePassword: 1,
-  },
+  'better-auth/plugins/phone-number/routes.mjs': { createSession: 2 },
   'better-auth/plugins/siwe/index.mjs': { createAccount: 2, createSession: 1 },
   'better-auth/plugins/test-utils/auth-helpers.mjs': { createSession: 5 },
   'better-auth/plugins/test-utils/db-helpers.mjs': { deleteUser: 1 },
@@ -204,6 +189,13 @@ const CALL_SITES: Record<string, Record<string, number>> = {
   },
   'better-auth/plugins/two-factor/verify-two-factor.mjs': { createSession: 1 },
   'better-auth/plugins/username/index.mjs': { createSession: 1 },
+  // Since 1.7.8 the password reset of /reset-password, /email-otp/reset-password and
+  // /phone-number/reset-password runs here (resetCredentialPassword); the routes are unchanged.
+  'better-auth/utils/password.mjs': {
+    createAccount: 1,
+    deleteUserSessions: 1,
+    updatePassword: 1,
+  },
 }
 
 const DOOR_CALLS = [

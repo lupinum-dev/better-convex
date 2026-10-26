@@ -770,7 +770,7 @@ describe('OIDC doors and linking with real Better Auth', () => {
         github: {
           clientId: 'github-id',
           clientSecret: 'github-secret',
-          // The account id comes from `data`; Better Auth 1.7.7 forbids `id` on the mapped user.
+          // The account id comes from `data`; Better Auth 1.7.12 forbids `id` on the mapped user.
           getUserInfo: async () => ({
             user: { name: 'Ada', email: EMAIL, emailVerified: true },
             // Only `id` is read (the account key); the rest of the GitHub profile is not used.

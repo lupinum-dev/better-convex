@@ -146,9 +146,10 @@ describe('OAuth authorization codes on the MCP starter', () => {
     const pkceGrant = await authorize()
     const before = await counts()
     const wrongVerifier = randomBytes(48).toString('base64url')
+    // RFC 7636 section 4.6; Better Auth answered invalid_request before 1.7.12.
     expectRejected(
       await redeem(pkceGrant, { code_verifier: wrongVerifier }),
-      'invalid_request',
+      'invalid_grant',
       'OAUTH_CODE_WRONG_PKCE_MINTED',
     )
     expectRejected(await redeem(pkceGrant), 'invalid_grant', 'OAUTH_CODE_WRONG_PKCE_DID_NOT_BURN')
@@ -174,7 +175,9 @@ describe('OAuth authorization codes on the MCP starter', () => {
     expectMinted(await redeem(await authorize()), 'OAUTH_CODE_FRESH_FLOW_FAILED')
   })
 
-  it('burns a confidential client code on a wrong Basic secret', async () => {
+  // Since 1.7.12 Better Auth checks the client before it reads the code (RFC 6749 section 5.2),
+  // so a wrong secret leaves the code usable, like the refusals before the provider above.
+  it('mints nothing on a wrong Basic secret, and the code stays single-use', async () => {
     const grant = await authorize(confidential.id)
     const before = await counts()
     const wrongSecret = randomBytes(48).toString('base64url')
@@ -183,16 +186,16 @@ describe('OAuth authorization codes on the MCP starter', () => {
       'invalid_client',
       'OAUTH_CODE_WRONG_BASIC_SECRET_MINTED',
     )
+    expect(await counts(), 'OAUTH_CODE_WRONG_BASIC_SECRET_PERSISTED_TOKEN').toEqual(before)
+    expectMinted(
+      await redeemConfidential(grant, confidential.secret),
+      'OAUTH_CODE_BASIC_SECRET_CHECK_BURNED_CODE',
+      confidential.id,
+    )
     expectRejected(
       await redeemConfidential(grant, confidential.secret),
       'invalid_grant',
-      'OAUTH_CODE_WRONG_BASIC_SECRET_DID_NOT_BURN',
-    )
-    expect(await counts(), 'OAUTH_CODE_WRONG_BASIC_SECRET_PERSISTED_TOKEN').toEqual(before)
-    expectMinted(
-      await redeemConfidential(await authorize(confidential.id), confidential.secret),
-      'OAUTH_CODE_FRESH_CONFIDENTIAL_FLOW_FAILED',
-      confidential.id,
+      'OAUTH_CODE_CONFIDENTIAL_REPLAY_ACCEPTED',
     )
   })
 
