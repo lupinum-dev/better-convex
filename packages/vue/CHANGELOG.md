@@ -1,5 +1,25 @@
 # @lupinum/better-convex-vue
 
+## 1.0.0-rc.8
+
+### Patch Changes
+
+- [#325](https://github.com/lupinum-dev/better-convex/pull/325) [`6486f8e`](https://github.com/lupinum-dev/better-convex/commit/6486f8eff2e6fa84046cb6c902e346523e76b97e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the Better Auth peers to 1.7.12 (stricter JWT key checks, RFC 6265bis cookies, OAuth client errors, safer password reset)
+  
+  Migration: install `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider` at exactly `1.7.12`.
+  
+  Local auth components: regenerate the schema. `id` is now sortable, and with `oauthProvider()` the `oauthConsent` table gains a `clientId_userId_id` index. Better Auth 1.7.12 looks up OAuth consent by `id`; an old schema makes that lookup fail.
+  
+  A profile that wires `oauthProvider` itself: add `/oauth2/client/rotate-keys` (new in 1.7.12) to `disabledPaths`. Without it, the factory refuses to start with `AUTH_OAUTH_CONFIG_INVALID`.
+  
+  The token endpoint now answers a wrong client secret with `401 invalid_client` before it reads the authorization code, so the code is not spent; it still mints nothing and stays single-use. A wrong PKCE verifier is now `invalid_grant` (RFC 7636), not `invalid_request`.
+  
+  MCP access tokens are now checked with `jose` and the keys from the auth component. Better Auth 1.7.12's own verifier uses a timer, and Convex queries and mutations do not allow timers.
+
+- [#325](https://github.com/lupinum-dev/better-convex/pull/325) [`6486f8e`](https://github.com/lupinum-dev/better-convex/commit/6486f8eff2e6fa84046cb6c902e346523e76b97e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the development log "failed with an unclassified error: undefined" when code normalizes an error that is not there
+  
+  `normalizeConvexError(undefined)` and `normalizeConvexError(null)` still return the `unknown` error, but no longer log in development: there is no original error to show.
+
 ## 1.0.0-rc.7
 
 ### Minor Changes
