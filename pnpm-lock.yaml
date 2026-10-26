@@ -23,8 +23,8 @@ importers:
         specifier: 4.6.1
         version: 4.6.1(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.13)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.13)(rollup@4.62.4)(vite@8.3.4(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.49.2)(yaml@2.9.0)))
       convex-helpers:
-        specifier: 0.1.129
-        version: 0.1.129(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7)
+        specifier: 0.1.120
+        version: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7)
       defu:
         specifier: 6.1.7
         version: 6.1.7
@@ -3022,15 +3022,15 @@ packages:
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
-  convex-helpers@0.1.129:
-    resolution: {integrity: sha512-8QJLbym0fKsf3tYcF2ZTX37NeYt/BkOFBjBwB2LR1fXUAajeYaTLV11gi/0IVOU/jCdH2j/VseHhHid1qQcqFw==}
+  convex-helpers@0.1.120:
+    resolution: {integrity: sha512-FPqtmN/10uoxmmhVq0ViNi08AnmHKT/eU1R8+ohmPZoHfg8noZEZCltApY/ASDdhq92o0kLZETggzBvMfHJDLQ==}
     hasBin: true
     peerDependencies:
       '@standard-schema/spec': ^1.0.0
-      convex: ^1.46.0
+      convex: ^1.32.0
       hono: 4.13.11
       react: ^17.0.2 || ^18.0.0 || ^19.0.0
-      typescript: ^5.5 || ^6.0.0 || ^7.0.0
+      typescript: ^5.5 || ^6.0.0
       zod: ^3.25.0 || ^4.0.0
     peerDependenciesMeta:
       '@standard-schema/spec':
@@ -9009,7 +9009,7 @@ snapshots:
 
   convert-source-map@2.0.0: {}
 
-  convex-helpers@0.1.129(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7):
+  convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7):
     dependencies:
       convex: 1.48.0
     optionalDependencies:

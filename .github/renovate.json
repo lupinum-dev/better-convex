@@ -10,6 +10,7 @@
   "packageRules": [
     { "groupName": "Nuxt ecosystem", "matchPackageNames": ["nuxt", "@nuxt/**", "@nuxtjs/**", "vue", "vue-router"] },
     { "groupName": "Convex ecosystem", "matchPackageNames": ["convex", "convex-*", "@convex-dev/**"] },
-    { "description": "Stay on h3 v1 while Nuxt/Nitro remains on the 1.x line.", "matchPackageNames": ["h3"], "allowedVersions": "<2.0.0" }
+    { "description": "Stay on h3 v1 while Nuxt/Nitro remains on the 1.x line.", "matchPackageNames": ["h3"], "allowedVersions": "<2.0.0" },
+    { "description": "Newer convex-helpers need convex >=1.43 (0.1.125+: >=1.46), above our convex peer floor 1.42.2 (D67).", "matchPackageNames": ["convex-helpers"], "allowedVersions": "<=0.1.120" }
   ]
 }

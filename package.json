@@ -136,7 +136,7 @@
   "dependencies": {
     "@lupinum/better-convex-vue": "workspace:*",
     "@nuxt/kit": "4.6.1",
-    "convex-helpers": "0.1.129",
+    "convex-helpers": "0.1.120",
     "defu": "6.1.7",
     "jiti": "2.7.0",
     "jose": "6.2.3",
