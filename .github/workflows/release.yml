@@ -57,7 +57,7 @@ jobs:
           git diff --cached --binary --no-renames > "$OUT/version.patch"
           echo "pending=$(jq 'length > 0' "$OUT/versions.json")" >> "$GITHUB_OUTPUT"
       - if: steps.version.outputs.pending == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: version
           path: ${{ runner.temp }}/version
@@ -257,7 +257,7 @@ jobs:
             tag=latest; if [[ "$version" == *-* ]]; then tag=next; fi
             npm publish "$tarball" --dry-run --access public --ignore-scripts --tag "$tag"
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release
           path: release
