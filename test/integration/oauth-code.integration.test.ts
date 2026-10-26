@@ -1,6 +1,7 @@
 // Authorization-code single use on the MCP starter: a concurrent double
-// redemption has one winner, replay fails, pre-provider guard failures keep the
-// code, and every provider-side failure burns it without persisting a token.
+// redemption has one winner, replay fails, pre-provider guard failures and a
+// wrong client secret keep the code, and every other provider-side failure burns
+// it without persisting a token.
 import { randomBytes } from 'node:crypto'
 
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'

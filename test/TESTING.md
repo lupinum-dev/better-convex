@@ -104,8 +104,9 @@ functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
   client disable/delete, consent), `mcp:write` step-up, and the stateless MCP
   protocol envelope through the official client SDK.
 - `oauth-code`: a concurrent double redemption has one winner; replay,
-  wrong PKCE, another client, a wrong Basic secret and a post-consume signing
-  fault burn the code without persisting a token; no credential in browser storage.
+  wrong PKCE, another client and a post-consume signing fault burn the code
+  without persisting a token; a wrong Basic secret mints nothing and leaves the
+  code for one later redemption with the right secret; no credential in browser storage.
 - `mcp-sizes`: the door's 1 MiB response limit (found by search, for each kind of
   escaped character and a very long JSON-RPC id: whole just under, the marker just
   over, never HTTP 502), a write that retries after an oversized result, an
