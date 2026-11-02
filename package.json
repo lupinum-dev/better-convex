@@ -163,7 +163,7 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "@vitest/browser-playwright": "^4.1.12",
     "@vitest/coverage-v8": "^4.1.12",
-    "arktype": "2.2.8",
+    "arktype": "2.2.9",
     "better-auth": "1.7.12",
     "convex": "1.48.0",
     "convex-test": "^0.0.65",
