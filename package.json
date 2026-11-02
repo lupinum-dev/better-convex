@@ -153,7 +153,7 @@
     "@lupinum/better-convex-functions": "workspace:*",
     "@modelcontextprotocol/client": "2.3.1",
     "@modelcontextprotocol/core": "2.3.1",
-    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
     "@modelcontextprotocol/server": "2.3.1",
     "@nuxt/eslint-config": "^1.16.0",
     "@nuxt/module-builder": "1.0.2",
