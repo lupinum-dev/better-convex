@@ -80,8 +80,6 @@ export async function startLiveFixture(): Promise<LiveFixture> {
         `SITE_URL=${origin}`,
         `BETTER_AUTH_SECRETS=${betterAuthSecrets}`,
         `BCN_AUTH_PROXY_IP_SECRET=${proxyIpSecret}`,
-        // The starter closes sign-up; the fixture user is created like the README does it.
-        'ALLOW_SIGN_UP=true',
       ].join('\n'),
       { mode: 0o600 },
     )
@@ -101,7 +99,14 @@ export async function startLiveFixture(): Promise<LiveFixture> {
       },
       secrets,
     )
-    await signUpFixtureUser(origin, email, password)
+    // The starter closes sign-up; the fixture user is created like the README does it. The
+    // preview's URL is public, so sign-up closes again even when the call fails.
+    await convex(['env', ...preview, 'set', 'ALLOW_SIGN_UP', 'true'])
+    try {
+      await signUpFixtureUser(origin, email, password)
+    } finally {
+      await convex(['env', ...preview, 'remove', 'ALLOW_SIGN_UP'])
+    }
 
     return Object.freeze({
       convexSiteUrl,
