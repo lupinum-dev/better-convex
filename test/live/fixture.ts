@@ -80,6 +80,8 @@ export async function startLiveFixture(): Promise<LiveFixture> {
         `SITE_URL=${origin}`,
         `BETTER_AUTH_SECRETS=${betterAuthSecrets}`,
         `BCN_AUTH_PROXY_IP_SECRET=${proxyIpSecret}`,
+        // The starter closes sign-up; the fixture user is created like the README does it.
+        'ALLOW_SIGN_UP=true',
       ].join('\n'),
       { mode: 0o600 },
     )
