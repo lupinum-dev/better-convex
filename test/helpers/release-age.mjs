@@ -4,7 +4,11 @@
 // once, in the root `pnpm-workspace.yaml`, and every scratch install honours it.
 import { readFileSync } from 'node:fs'
 
-const root = readFileSync(new URL('../../pnpm-workspace.yaml', import.meta.url), 'utf8')
+// A Windows checkout may have CRLF line endings.
+const root = readFileSync(new URL('../../pnpm-workspace.yaml', import.meta.url), 'utf8').replace(
+  /\r\n/g,
+  '\n',
+)
 const exclude = /^minimumReleaseAgeExclude:\n(?:[ \t]+-.*\n)+/m.exec(root)?.[0] ?? ''
 
 /** `minimumReleaseAge` plus the root exclusions, as pnpm-workspace.yaml lines. */

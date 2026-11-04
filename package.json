@@ -156,7 +156,7 @@
     "@modelcontextprotocol/ext-apps": "2.0.4",
     "@modelcontextprotocol/server": "2.3.1",
     "@nuxt/eslint-config": "^1.16.0",
-    "@nuxt/module-builder": "1.0.3",
+    "@nuxt/module-builder": "1.0.2",
     "@nuxt/schema": "4.6.4",
     "@nuxt/test-utils": "^4.3.4",
     "@types/node": "22.20.5",
