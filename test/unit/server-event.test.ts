@@ -251,11 +251,12 @@ describe('server event adapter: raw h3 v1 request URL', () => {
     },
   )
 
-  // Catches an adapter that always answers http once the forwarded header is ignored.
+  // Catches an adapter that always answers http once the forwarded header is ignored, and one
+  // that still lets the header decide on a TLS socket.
   it('reads https from a TLS socket', () => {
     const { req, res } = nodeRequestResponse()
     Object.assign(req.socket, { encrypted: true })
-    delete req.headers['x-forwarded-proto']
+    req.headers['x-forwarded-proto'] = 'http'
 
     expect(eventRequestUrl(createEvent(req, res)).href).toBe(URL_STRING)
   })
