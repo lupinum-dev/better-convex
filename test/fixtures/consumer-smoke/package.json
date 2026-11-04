@@ -7,12 +7,12 @@
     "typecheck": "nuxi typecheck"
   },
   "devDependencies": {
-    "@better-auth/core": "1.7.12",
+    "@better-auth/core": "1.7.16",
     "@types/node": "22.20.1",
-    "better-auth": "1.7.12",
+    "better-auth": "1.7.16",
     "convex": "1.42.2",
-    "nuxt": "4.6.1",
+    "nuxt": "4.6.4",
     "typescript": "5.9.3",
-    "vue-tsc": "3.3.13"
+    "vue-tsc": "3.3.14"
   }
 }

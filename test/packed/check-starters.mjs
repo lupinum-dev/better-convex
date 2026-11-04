@@ -21,6 +21,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+import { RELEASE_AGE_YAML } from '../helpers/release-age.mjs'
 import { packWorkspace } from './check-packed.mjs'
 import { toNuxt5Manifest, toNuxt5Workspace } from './nuxt5-lane.mjs'
 
@@ -104,7 +105,7 @@ try {
     // Keep the app's own settings (a starter's build approvals) and add the packed-release ones.
     const workspacePath = join(app, 'pnpm-workspace.yaml')
     const own = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
-    const workspace = `${own}minimumReleaseAge: 1440\noverrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
+    const workspace = `${own}${RELEASE_AGE_YAML}overrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
     writeFileSync(workspacePath, nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace)
 
     console.log(

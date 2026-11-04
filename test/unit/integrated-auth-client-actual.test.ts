@@ -13,7 +13,7 @@ import {
 } from '../../src/runtime/auth/session-synchronization'
 
 /**
- * Pins change detection to the real Better Auth 1.7.12 client: every request
+ * Pins change detection to the real pinned Better Auth client: every request
  * outside the known read-only routes, plus Better Auth's own `$sessionSignal`,
  * decides which calls reconcile, so read-only calls never refetch the session
  * or mint a token while session changes the signal misses still reconcile.
@@ -142,7 +142,7 @@ function createHarness() {
 
 type Client = ReturnType<typeof createHarness>['integrated']
 
-describe('integrated client against pinned Better Auth 1.7.12', () => {
+describe('integrated client against pinned Better Auth', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })

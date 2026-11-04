@@ -134,9 +134,10 @@ export function eventRequestHeaders(event: ConvexServerEvent): Headers {
 }
 
 /**
- * The request URL. On a raw h3 v1 event it is built the way h3 1.x
- * `getRequestURL` builds it (Host header, `x-forwarded-proto: https`, the
- * original path).
+ * The request URL. On a raw h3 v1 event it is built from the Host header, the
+ * socket's TLS state and the original path. A client can send
+ * `x-forwarded-proto`, so it is not read, as in the Nuxt 4.6.4 portable event
+ * without the opt-in.
  */
 export function eventRequestUrl(event: ConvexServerEvent): URL {
   if (isWebShaped(event)) return new URL(event.req.url)
@@ -144,7 +145,7 @@ export function eventRequestUrl(event: ConvexServerEvent): URL {
   const req = v1.node.req
   const host = req.headers.host || 'localhost'
   const encrypted = (req.socket as { encrypted?: boolean } | null | undefined)?.encrypted === true
-  const protocol = req.headers['x-forwarded-proto'] === 'https' || encrypted ? 'https' : 'http'
+  const protocol = encrypted ? 'https' : 'http'
   const path = (req.originalUrl || v1.path).replace(/^[/\\]+/g, '/')
   return new URL(path, `${protocol}://${host}`)
 }
