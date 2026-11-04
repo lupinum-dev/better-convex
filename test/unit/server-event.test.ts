@@ -36,6 +36,9 @@ const { toPortableEvent } = (await import(portableEventModule)) as {
 }
 
 const URL_STRING = 'https://example.test/api/auth/get-session?x=1'
+// A Node request over plain HTTP. The client-sent `x-forwarded-proto: https` below
+// must not turn it into https.
+const NODE_URL_STRING = 'http://example.test/api/auth/get-session?x=1'
 const REQUEST_HEADERS = {
   host: 'example.test',
   'x-forwarded-proto': 'https',
@@ -64,6 +67,7 @@ interface Shape {
   }
   signalBeforeDisconnect: boolean | undefined
   signalAfterDisconnect: boolean | undefined
+  requestUrl: string
   webRequestUrl: string | undefined
 }
 
@@ -85,6 +89,7 @@ const shapes: Shape[] = [
     // On Node, h3 v1 has no request signal; disconnects arrive on the Node request.
     signalBeforeDisconnect: undefined,
     signalAfterDisconnect: undefined,
+    requestUrl: NODE_URL_STRING,
     webRequestUrl: undefined,
   },
   {
@@ -105,7 +110,8 @@ const shapes: Shape[] = [
     // aborts; returning it would hide that callers must listen on Node.
     signalBeforeDisconnect: undefined,
     signalAfterDisconnect: undefined,
-    webRequestUrl: URL_STRING,
+    requestUrl: NODE_URL_STRING,
+    webRequestUrl: NODE_URL_STRING,
   },
   {
     // Nuxt 5 (h3 v2) and RequestEvent: no `event.web`, so reading
@@ -130,6 +136,7 @@ const shapes: Shape[] = [
     },
     signalBeforeDisconnect: false,
     signalAfterDisconnect: true,
+    requestUrl: URL_STRING,
     webRequestUrl: URL_STRING,
   },
   {
@@ -159,6 +166,7 @@ const shapes: Shape[] = [
     },
     signalBeforeDisconnect: false,
     signalAfterDisconnect: true,
+    requestUrl: URL_STRING,
     webRequestUrl: URL_STRING,
   },
 ]
@@ -170,7 +178,7 @@ describe.each(shapes)('server event adapter: $name', (shape) => {
     const headers = eventRequestHeaders(event)
     expect(headers.get('cookie')).toBe('better-auth.session_token=abc; theme=dark')
     expect(headers.get('cf-connecting-ip')).toBe('203.0.113.9')
-    expect(eventRequestUrl(event).href).toBe(URL_STRING)
+    expect(eventRequestUrl(event).href).toBe(shape.requestUrl)
     expect(eventRequestMethod(event)).toBe('POST')
   })
 
@@ -227,14 +235,30 @@ describe('server event adapter: raw h3 v1 request URL', () => {
       originalUrl: '/base/api/auth/get-session',
     },
     { name: 'a path that starts with //', url: '//evil.test/api/auth/get-session' },
-  ])('matches h3 1.x getRequestURL: $name', ({ url, originalUrl }) => {
-    const { req, res } = nodeRequestResponse()
-    req.url = url
-    if (originalUrl) Object.assign(req, { originalUrl })
-    const event = createEvent(req, res)
+  ])(
+    'matches h3 1.x getRequestURL except the forwarded protocol: $name',
+    ({ url, originalUrl }) => {
+      const { req, res } = nodeRequestResponse()
+      req.url = url
+      if (originalUrl) Object.assign(req, { originalUrl })
+      const event = createEvent(req, res)
 
-    expect(eventRequestUrl(event).href).toBe(getRequestURL(event).href)
-    expect(eventRequestUrl(event).host).toBe('example.test')
+      // h3 1.x trusts the client-sent `x-forwarded-proto: https`; the adapter does not.
+      expect(eventRequestUrl(event).href).toBe(
+        getRequestURL(event).href.replace(/^https:/, 'http:'),
+      )
+      expect(eventRequestUrl(event).host).toBe('example.test')
+    },
+  )
+
+  // Catches an adapter that always answers http once the forwarded header is ignored, and one
+  // that still lets the header decide on a TLS socket.
+  it('reads https from a TLS socket', () => {
+    const { req, res } = nodeRequestResponse()
+    Object.assign(req.socket, { encrypted: true })
+    req.headers['x-forwarded-proto'] = 'http'
+
+    expect(eventRequestUrl(createEvent(req, res)).href).toBe(URL_STRING)
   })
 })
 

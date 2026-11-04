@@ -24,6 +24,7 @@ import { makeFunctionReference } from 'convex/server'
 import { createJiti } from 'jiti'
 
 import { ensureLocalBackend } from '../helpers/local-backend.mjs'
+import { RELEASE_AGE_YAML } from '../helpers/release-age.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const jiti = createJiti(import.meta.url, { interopDefault: false })
@@ -307,7 +308,7 @@ function preparePackagedDemo(isolatedRoot, parent, tarball, vueTarball) {
   writeFileSync(
     path.join(packaged, 'pnpm-workspace.yaml'),
     [
-      'minimumReleaseAge: 1440',
+      RELEASE_AGE_YAML.trimEnd(),
       'strictPeerDependencies: true',
       'overrides:',
       "  '@lupinum/better-convex-vue': 'file:./better-convex-vue.tgz'",

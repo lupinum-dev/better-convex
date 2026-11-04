@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { RELEASE_AGE_YAML } from '../helpers/release-age.mjs'
 import { inspectConsumerCandidate } from './package-consumer-candidate.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../..')
@@ -49,7 +50,7 @@ function run(command, args, cwd = scratchRoot) {
 try {
   cpSync(tarballPath, join(scratchRoot, 'better-convex-agents.tgz'))
   cpSync(functionsTarballPath, join(scratchRoot, 'better-convex-functions.tgz'))
-  writeFileSync(join(scratchRoot, 'pnpm-workspace.yaml'), 'minimumReleaseAge: 1440\n')
+  writeFileSync(join(scratchRoot, 'pnpm-workspace.yaml'), RELEASE_AGE_YAML)
   writeFileSync(
     join(scratchRoot, 'package.json'),
     `${JSON.stringify(
@@ -130,7 +131,7 @@ try {
   // scratchRoot, so Node cannot find the SDK in a parent node_modules.
   for (const name of ['better-convex-agents.tgz', 'better-convex-functions.tgz'])
     cpSync(join(scratchRoot, name), join(withoutSdk, name))
-  writeFileSync(join(withoutSdk, 'pnpm-workspace.yaml'), 'minimumReleaseAge: 1440\n')
+  writeFileSync(join(withoutSdk, 'pnpm-workspace.yaml'), RELEASE_AGE_YAML)
   writeFileSync(
     join(withoutSdk, 'package.json'),
     `${JSON.stringify({

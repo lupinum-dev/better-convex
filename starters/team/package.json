@@ -19,26 +19,26 @@
     "verify:full": "pnpm verify:release && pnpm verify:browser"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.12",
+    "@better-auth/oauth-provider": "1.7.16",
     "@convex-dev/rate-limiter": "^0.4.2",
     "@lupinum/better-convex-nuxt": "1.0.0-rc.6",
-    "better-auth": "1.7.12",
+    "better-auth": "1.7.16",
     "convex": "1.48.0",
-    "nuxt": "4.6.2",
+    "nuxt": "4.6.4",
     "vue": "3.5.44",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
-    "@nuxt/schema": "4.6.1",
+    "@nuxt/schema": "4.6.4",
     "@types/node": "^25.0.0",
-    "convex-test": "^0.0.65",
-    "playwright": "^1.64.0",
+    "convex-test": "^0.0.67",
+    "playwright": "^1.64.1",
     "typescript": "~5.9.3",
-    "vite": "8.3.4",
+    "vite": "8.3.5",
     "vitest": "^4.1.12",
     "vue-router": "^5.1.0",
-    "vue-tsc": "^3.3.13"
+    "vue-tsc": "^3.3.14"
   },
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

@@ -20,9 +20,9 @@ const FIX_HINT =
   'Classify the new route in the door inventory (can it create a session, link/delete an account, change a password or email?), review the guards in oidc-plugin.ts and disabledPaths, then update the list in test/unit/better-auth-door-inventory.test.ts.'
 
 const REVIEWED_VERSIONS = {
-  'better-auth': '1.7.12',
-  '@better-auth/core': '1.7.12',
-  '@better-auth/oauth-provider': '1.7.12',
+  'better-auth': '1.7.16',
+  '@better-auth/core': '1.7.16',
+  '@better-auth/oauth-provider': '1.7.16',
 }
 
 // Reachable endpoints of an instance with every reviewed option on. twoFactor cannot be combined
@@ -127,7 +127,7 @@ const CALL_SITES: Record<string, Record<string, number>> = {
     deleteAccount: 1,
     updateAccount: 3,
   },
-  'better-auth/api/routes/email-verification.mjs': { createSession: 3 },
+  'better-auth/api/routes/email-verification.mjs': { createSession: 1 },
   'better-auth/api/routes/session.mjs': {
     deleteSession: 3,
     deleteUserSessions: 1,

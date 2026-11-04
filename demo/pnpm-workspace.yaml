@@ -5,6 +5,21 @@ minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
+# Urgent fix for the Better Auth security release of 2026-11-03 (12 GHSAs,
+# https://better-auth.com/blog/security-release-2026-11-03). Exact versions only;
+# remove after 2026-11-05, once they are 24 hours old.
+minimumReleaseAgeExclude:
+  - better-auth@1.7.16
+  - '@better-auth/core@1.7.16'
+  - '@better-auth/oauth-provider@1.7.16'
+  - '@better-auth/telemetry@1.7.16'
+  - '@better-auth/drizzle-adapter@1.7.16'
+  - '@better-auth/kysely-adapter@1.7.16'
+  - '@better-auth/memory-adapter@1.7.16'
+  - '@better-auth/mongo-adapter@1.7.16'
+  - '@better-auth/prisma-adapter@1.7.16'
+  - better-call@1.4.5
+
 overrides:
   # Several compiler/build owners pin the vulnerable patch exactly.
   # Remove when clean resolution selects source-map-js >=1.2.2 without this pin.

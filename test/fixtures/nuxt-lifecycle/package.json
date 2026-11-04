@@ -10,14 +10,14 @@
     "@lupinum/better-convex-nuxt": "file:./better-convex-nuxt.tgz",
     "@lupinum/better-convex-vue": "file:./better-convex-vue.tgz",
     "convex": "1.42.2",
-    "nuxt": "4.6.1",
+    "nuxt": "4.6.4",
     "vue": "3.5.43"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
-    "better-auth": "1.7.12",
+    "better-auth": "1.7.16",
     "typescript": "5.9.3",
-    "vue-tsc": "3.3.13"
+    "vue-tsc": "3.3.14"
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"

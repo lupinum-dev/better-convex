@@ -39,10 +39,10 @@ Better Convex does not decide who may read or change data. Check the user, owner
 ## Requirements
 
 - Node.js `^22.22.3 || ^24.15.0 || >=26.0.0` for the Nuxt package, `^22.19.0 || ^24.11.0 || >=26.0.0` for the Vue package, and `^22.19.0 || ^24.11.0` for the Functions and Agents packages
-- Nuxt `^4.6.0 || ^5.0.0-0`, tested on 4.6.1 and the Nuxt 5 nightly (pre-release until Nuxt 5 ships)
+- Nuxt `^4.6.0 || ^5.0.0-0`, tested on 4.6.4 and the Nuxt 5 nightly (pre-release until Nuxt 5 ships)
 - Convex `>=1.42.2 <2`
 - Vue `>=3.5 <4`
-- For authentication: `better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider`, each at exactly `1.7.12`
+- For authentication: `better-auth`, `@better-auth/core`, and `@better-auth/oauth-provider`, each at exactly `1.7.16`
 
 ## Installation
 
@@ -215,7 +215,7 @@ Do not keep a caller between requests. `requireConvexUser(event)` returns the si
 Authentication is off until you add a `convex.auth` object to the Nuxt configuration. To turn it on, install the exact Better Auth versions and run the setup command:
 
 ```bash
-pnpm add better-auth@1.7.12 @better-auth/core@1.7.12 @better-auth/oauth-provider@1.7.12
+pnpm add better-auth@1.7.16 @better-auth/core@1.7.16 @better-auth/oauth-provider@1.7.16
 pnpm exec better-convex init --typed-client
 ```
 
