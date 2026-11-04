@@ -25,7 +25,7 @@ overrides:
   zod: 4.6.7
   # Remove these audit pins when normal resolution retains the patched versions.
   'ajv@8>fast-uri': 3.1.9
-  'express@5>qs': 6.16.0
+  'express@5>qs': 6.16.1
   'body-parser@2>qs': 6.16.0
   esbuild: 0.28.1
   sharp: 0.35.5
@@ -49,3 +49,6 @@ patchedDependencies:
   # random few go missing on each build. The patch pages through the collection. Remove it
   # when ginko-content pages queryMarkdownEnabledContent (still unpaged in 1.0.0-beta.10).
   '@lupinum/ginko-content@1.0.0-beta.5': patches/@lupinum__ginko-content@1.0.0-beta.5.patch
+minimumReleaseAgeExclude:
+  # Renovate security update: qs@6.16.1
+  - qs@6.16.1
