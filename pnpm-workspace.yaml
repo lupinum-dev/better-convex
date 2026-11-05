@@ -23,7 +23,7 @@ overrides:
   'oxfmt>tinypool': 2.1.2
   # Express 4 and body-parser 1 constrain qs below the patched minor.
   # Remove when both owners accept qs >=6.16.0 and the audit stays clean.
-  'express@4>qs': 6.16.0
+  'express@4>qs': 6.16.1
   'body-parser@1>qs': 6.16.0
   # Transitive build and HTTP owners permit these patched releases, but can
   # retain vulnerable lockfile selections. Remove when a clean resolution
@@ -47,3 +47,6 @@ auditConfig:
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm # braces <=3.0.3
     - GHSA-86w9-cpqp-85rv # node-forge <=1.4.0
+minimumReleaseAgeExclude:
+  # Renovate security update: qs@6.16.1
+  - qs@6.16.1
