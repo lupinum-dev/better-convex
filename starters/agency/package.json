@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@better-auth/oauth-provider": "1.7.16",
-    "@lupinum/better-convex-nuxt": "1.0.0-rc.6",
+    "@lupinum/better-convex-nuxt": "1.0.0-rc.9",
     "better-auth": "1.7.16",
     "convex": "1.48.0",
     "nuxt": "4.6.4",
