@@ -7,8 +7,6 @@ settings:
 overrides:
   source-map-js: 1.2.2
   oxfmt>tinypool: 2.1.2
-  express@4>qs: 6.16.0
-  body-parser@1>qs: 6.16.0
   svgo: 4.1.0
   hono: 4.13.11
 
