@@ -13,10 +13,11 @@ The finished app of the [Better Convex quick start](https://better-convex.lupinu
 
 ```bash
 pnpm install
+cp .env.example .env.local
 pnpm dev
 ```
 
-`pnpm dev` runs `better-convex-nuxt dev`. The first start downloads a Convex backend for your computer, writes its URL to `.env.local`, and starts Nuxt at `http://localhost:3000`. You need no Convex account.
+`.env.local` sets `SITE_URL`, which Nuxt needs to start with auth on. `pnpm dev` runs `better-convex-nuxt dev`. The first start downloads a Convex backend for your computer, writes its URL to `.env.local`, and starts Nuxt at `http://localhost:3000`. You need no Convex account.
 
 Set up auth once, in a second terminal while `pnpm dev` runs:
 
@@ -24,7 +25,7 @@ Set up auth once, in a second terminal while `pnpm dev` runs:
 pnpm exec better-convex-nuxt auth init
 ```
 
-It keeps the auth files of this starter, and sets `SITE_URL`, the secrets and the first signing key. It writes `SITE_URL` and `BCN_AUTH_PROXY_IP_SECRET` to `.env.local`. Then stop `pnpm dev` with Ctrl-C and start it again.
+It keeps the auth files of this starter, and sets `SITE_URL`, the secrets and the first signing key in Convex. It adds `BCN_AUTH_PROXY_IP_SECRET` to `.env.local`. Then stop `pnpm dev` with Ctrl-C and start it again.
 
 Sign in with any address. Without an `email` hook, the code appears in the `pnpm dev` output, in a line with `[better-convex-nuxt dev outbox]`.
 
