@@ -42,7 +42,7 @@ function usage(): string {
     'Generate a paired Better Convex Nuxt local auth schema and metadata descriptor.',
     '',
     'Usage:',
-    '  better-convex auth schema --config <schema-options.ts> [--output <directory>] [--check]',
+    '  better-convex-nuxt auth schema --config <schema-options.ts> [--output <directory>] [--check]',
     '',
     'The config must default-export environment-independent BetterAuthOptions using:',
     `  baseURL: ${SCHEMA_BASE_URL}`,
@@ -228,7 +228,7 @@ if (invokedAsScript) {
   try {
     process.exitCode = await runAuthSchemaCommand(process.argv.slice(2))
   } catch (error) {
-    console.error(`[better-convex] ${error instanceof Error ? error.message : 'failed'}`)
+    console.error(`[better-convex-nuxt] ${error instanceof Error ? error.message : 'failed'}`)
     process.exitCode = 1
   }
 }

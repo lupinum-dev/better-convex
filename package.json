@@ -26,7 +26,7 @@
     "url": "https://github.com/lupinum-dev/better-convex"
   },
   "bin": {
-    "better-convex": "./dist/runtime/cli/index.js"
+    "better-convex-nuxt": "./dist/runtime/cli/index.js"
   },
   "files": [
     "dist",

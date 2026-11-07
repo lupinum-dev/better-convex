@@ -121,10 +121,10 @@ Use a fresh deployment. This starter has no migration path from older schemas.
    set -a
    . ./.env.local
    set +a
-   pnpm exec better-convex convex env set SITE_URL "$SITE_URL"
+   pnpm exec better-convex-nuxt convex env set SITE_URL "$SITE_URL"
    BETTER_AUTH_SECRETS="1:$(openssl rand -base64 32)"
-   printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
-   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
+   printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex-nuxt convex env set BETTER_AUTH_SECRETS
+   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt convex env set BCN_AUTH_PROXY_IP_SECRET
    unset BETTER_AUTH_SECRETS
    ```
 
@@ -139,7 +139,7 @@ Use a fresh deployment. This starter has no migration path from older schemas.
    the fresh deployment's first signing key before you allow auth traffic:
 
    ```bash
-   pnpm exec better-convex convex run auth:rotateSigningKey '{}'
+   pnpm exec better-convex-nuxt convex run auth:rotateSigningKey '{}'
    ```
 
    On this fresh deployment, require `previousKids` to be empty and record the
@@ -161,7 +161,7 @@ Use a fresh deployment. This starter has no migration path from older schemas.
    `ALLOW_SIGN_UP` is `true`. Open it for this one call, then remove it:
 
    ```bash
-   pnpm exec better-convex convex env set ALLOW_SIGN_UP true
+   pnpm exec better-convex-nuxt convex env set ALLOW_SIGN_UP true
    BCN_LOCAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"
    curl --fail-with-body \
      -H 'Content-Type: application/json' \
@@ -170,7 +170,7 @@ Use a fresh deployment. This starter has no migration path from older schemas.
      http://localhost:3000/api/auth/sign-up/email <<JSON
    {"name":"Local Owner","email":"owner@example.com","password":"${BCN_LOCAL_ADMIN_PASSWORD}"}
    JSON
-   pnpm exec better-convex convex env remove ALLOW_SIGN_UP
+   pnpm exec better-convex-nuxt convex env remove ALLOW_SIGN_UP
    ```
 
    Keep that generated password only in the calling shell or a test secret
@@ -183,7 +183,7 @@ Use a fresh deployment. This starter has no migration path from older schemas.
 1. Create the Inspector client as the deployment operator:
 
    ```bash
-   pnpm exec better-convex convex run connections:createInspectorClient '{}'
+   pnpm exec better-convex-nuxt convex run connections:createInspectorClient '{}'
    ```
 
    Record the returned `clientId`. The client accepts only the callback

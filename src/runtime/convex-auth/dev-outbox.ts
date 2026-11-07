@@ -29,5 +29,5 @@ export async function devOutbox(message: BetterConvexAuthEmail): Promise<void> {
       : message.type === 'organization-invitation'
         ? `invitation ${message.invitationId}`
         : message.url
-  console.log(`[better-convex dev outbox] ${message.type} to ${message.to}: ${secret}`)
+  console.log(`[better-convex-nuxt dev outbox] ${message.type} to ${message.to}: ${secret}`)
 }

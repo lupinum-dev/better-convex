@@ -3,7 +3,7 @@
 # before building Nuxt, so the frontend never ships ahead of its backend.
 # Preview builds deploy no backend and only build the frontend.
 #
-# This calls the plain Convex CLI on purpose: `better-convex convex deploy`
+# This calls the plain Convex CLI on purpose: `better-convex-nuxt convex deploy`
 # reads its deployment only from .env.local, which does not exist on Vercel.
 # The Convex CLI reads CONVEX_DEPLOY_KEY from the Vercel environment.
 set -eu

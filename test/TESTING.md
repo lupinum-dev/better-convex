@@ -140,9 +140,9 @@ pinned version, then configure it and run with auto-start off:
 cd playground
 pnpm exec convex dev --local-backend-version <backendVersion in test/helpers/local-backend.json>
 # in another terminal
-pnpm exec better-convex convex env set SITE_URL http://localhost:3050
-printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
-printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
+pnpm exec better-convex-nuxt convex env set SITE_URL http://localhost:3050
+printf '%s' "$BETTER_AUTH_SECRETS" | pnpm exec better-convex-nuxt convex env set BETTER_AUTH_SECRETS
+printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt convex env set BCN_AUTH_PROXY_IP_SECRET
 cd .. && CONVEX_E2E_AUTO_START=false pnpm test:e2e
 ```
 

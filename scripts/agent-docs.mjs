@@ -112,7 +112,7 @@ const rules = [
   "`'skip'` stops the query and clears its data, also with `keepPreviousData`.",
   "`null` is a successful query result, not a loading state: compare `data` with `undefined`, never test `!data`. Show the skeleton while `data` is `undefined` and `status` is `'pending'` or `blockedBy` is `'server'`. Fill a form from a query once, when `status === 'success'` and `isStale` is `false`, and keep the user's edits when a live update arrives.",
   'In an optimistic update, read the current result with `store.getQuery()` and IDs from `args`, not from component state, and create complete documents. Convex runs the update again when new server data arrives.',
-  'For local development without a Convex account, run `pnpm exec better-convex convex dev --anonymous`. Run Nuxt commands with `--dotenv .env.local`.',
+  'For local development, run `better-convex-nuxt dev` (Convex and Nuxt together; without a deployment in `.env.local` it starts a local backend that needs no account). The command is `better-convex-nuxt`; never run `npx better-convex`, which is an unrelated package.',
 ]
 
 // The functions and agents packages open with their own tasks and rules; the full page index

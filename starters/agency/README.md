@@ -79,16 +79,16 @@ application ceremony that proves authorization from both tenant sides.
      printf 'BCN_AUTH_PROXY_IP_SECRET=%s\n' "$BCN_AUTH_PROXY_IP_SECRET" >> .env.local.next
      mv .env.local.next .env.local
    )
-   pnpm exec better-convex convex env set SITE_URL http://localhost:3000
-   printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex convex env set BETTER_AUTH_SECRETS
-   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex convex env set BCN_AUTH_PROXY_IP_SECRET
+   pnpm exec better-convex-nuxt convex env set SITE_URL http://localhost:3000
+   printf '0:%s' "$(openssl rand -base64 32)" | pnpm exec better-convex-nuxt convex env set BETTER_AUTH_SECRETS
+   printf '%s' "$BCN_AUTH_PROXY_IP_SECRET" | pnpm exec better-convex-nuxt convex env set BCN_AUTH_PROXY_IP_SECRET
    ```
 
 5. Create the fresh deployment's first signing key. Without it, sign-in fails
    with `AUTH_JWKS_OPERATOR_SETUP_REQUIRED`:
 
    ```bash
-   pnpm exec better-convex convex run auth:rotateSigningKey '{}'
+   pnpm exec better-convex-nuxt convex run auth:rotateSigningKey '{}'
    ```
 
    On a fresh deployment the result has an empty `previousKids`. A previous

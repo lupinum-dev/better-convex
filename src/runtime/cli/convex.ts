@@ -67,7 +67,16 @@ const FORBIDDEN_FILE_BOUND_ARGUMENTS = [
   '--type',
   '--url',
 ] as const
-const FILE_BOUND_COMMANDS = new Set(['codegen', 'data', 'deploy', 'dev', 'env', 'logs', 'run'])
+const FILE_BOUND_COMMANDS = new Set([
+  'codegen',
+  'dashboard',
+  'data',
+  'deploy',
+  'dev',
+  'env',
+  'logs',
+  'run',
+])
 const DEPLOYMENT_KEY = /^(?:dev|prod):[^:|\s]+\|\S+$/u
 const DEPLOYMENT_NAME = /^(?:custom|dev|local|preview|prod):[a-z0-9_-]+$/u
 
@@ -77,6 +86,21 @@ export interface ConvexAuthoritySnapshot {
   digest: string
   development: boolean
   label: string
+}
+
+/**
+ * True when `.env.local` selects a deployment, so Convex commands can run file-bound. A missing
+ * file, or one without a selector, is false; an invalid file throws like every file-bound command.
+ */
+export async function hasConvexAuthorityFile(cwd: string): Promise<boolean> {
+  try {
+    await stat(resolve(cwd, AUTHORITY_ENV_FILE))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+  const environment = await readAuthorityFile(resolve(cwd))
+  return [...DEPLOYMENT_SELECTORS].some((name) => hasValue(environment, name))
 }
 
 function hasValue(environment: Readonly<Record<string, string>>, name: string): boolean {
@@ -261,35 +285,38 @@ function usage(): string {
     'Run the pinned Convex CLI with one explicit deployment authority.',
     '',
     'Usage:',
-    '  better-convex convex configure',
-    '  better-convex convex dev --anonymous [options]',
-    '  better-convex convex <codegen|data|deploy|dev|env|logs|run> [options]',
-    '  better-convex convex deployment select <selector>',
+    '  better-convex-nuxt convex configure',
+    '  better-convex-nuxt convex dev --anonymous [options]',
+    '  better-convex-nuxt convex <codegen|dashboard|data|deploy|dev|env|logs|run> [options]',
+    '  better-convex-nuxt convex deployment select <selector>',
     '',
     'File-bound commands use only .env.local. Configure, anonymous dev, and',
     'deployment select clear inherited and dotenv authority before Convex runs.',
   ].join('\n')
 }
 
-export async function runConvexCommand(
+interface ConvexCommandOptions {
+  cwd?: string
+  developmentOnly?: boolean
+  expectedAuthorityDigest?: string
+  inheritedEnvironment?: NodeJS.ProcessEnv
+}
+
+export interface ConvexInvocation {
+  /** `node` arguments that start the project's own Convex CLI. */
+  readonly args: readonly string[]
+  readonly cwd: string
+  readonly env: Record<string, string>
+}
+
+/** Check a Convex command and build the process that runs it, without starting it. */
+export async function resolveConvexInvocation(
   arguments_: readonly string[],
-  options: {
-    cwd?: string
-    developmentOnly?: boolean
-    expectedAuthorityDigest?: string
-    inheritedEnvironment?: NodeJS.ProcessEnv
-    input?: string
-    onStdout?: (output: string) => void
-    quiet?: boolean
-  } = {},
-): Promise<number> {
+  options: ConvexCommandOptions = {},
+): Promise<ConvexInvocation> {
   const cwd = resolve(options.cwd ?? process.cwd())
   const inherited = options.inheritedEnvironment ?? process.env
   const [command, ...commandArguments] = arguments_
-  if (arguments_.length === 1 && (command === '--help' || command === '-h')) {
-    console.log(usage())
-    return 0
-  }
   let convexArguments: string[]
   let environment: Record<string, string>
 
@@ -355,9 +382,25 @@ export async function runConvexCommand(
   }
 
   const convexCli = resolve(cwd, 'node_modules/convex/bin/main.js')
-  const result = spawnSync(process.execPath, ['--', convexCli, ...convexArguments], {
-    cwd,
-    env: environment,
+  return { args: ['--', convexCli, ...convexArguments], cwd, env: environment }
+}
+
+export async function runConvexCommand(
+  arguments_: readonly string[],
+  options: ConvexCommandOptions & {
+    input?: string
+    onStdout?: (output: string) => void
+    quiet?: boolean
+  } = {},
+): Promise<number> {
+  if (arguments_.length === 1 && (arguments_[0] === '--help' || arguments_[0] === '-h')) {
+    console.log(usage())
+    return 0
+  }
+  const invocation = await resolveConvexInvocation(arguments_, options)
+  const result = spawnSync(process.execPath, invocation.args, {
+    cwd: invocation.cwd,
+    env: invocation.env,
     input: options.input,
     stdio: options.quiet ? ['pipe', 'pipe', 'pipe'] : 'inherit',
   })
@@ -385,7 +428,7 @@ if (invokedAsScript) {
   try {
     process.exitCode = await runConvexCommand(process.argv.slice(2))
   } catch (error) {
-    console.error(`[better-convex] ${error instanceof Error ? error.message : 'failed'}`)
+    console.error(`[better-convex-nuxt] ${error instanceof Error ? error.message : 'failed'}`)
     process.exitCode = 1
   }
 }

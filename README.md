@@ -28,7 +28,7 @@
 - Optional [Better Auth](https://www.better-auth.com) support keeps sessions in a Convex component and signs users in to Convex.
 - An optional MCP package lets AI hosts, such as ChatGPT and Claude, call your Convex functions as tools.
 
-Better Convex is a set of composables and helpers, not a framework. It does not require a registry or a fixed folder layout. The only generated code is Convex's own API and, when you use Better Auth, the auth component that `better-convex init` writes to `convex/betterAuth/` with its generated schema.
+Better Convex is a set of composables and helpers, not a framework. It does not require a registry or a fixed folder layout. The only generated code is Convex's own API and, when you use Better Auth, the auth component that `better-convex-nuxt auth init` writes to `convex/betterAuth/` with its generated schema.
 
 ## When to use it
 
@@ -66,7 +66,7 @@ export default defineNuxtConfig({
 Connect a Convex deployment. This command signs you in to Convex, creates or selects a deployment, writes its URLs to `.env.local`, and creates the `convex/` folder:
 
 ```bash
-pnpm exec better-convex convex configure
+pnpm exec better-convex-nuxt convex configure
 ```
 
 Keep it running while you work on Convex functions. It pushes each change to your development deployment.
@@ -216,7 +216,7 @@ Authentication is off until you add a `convex.auth` object to the Nuxt configura
 
 ```bash
 pnpm add better-auth@1.7.16 @better-auth/core@1.7.16 @better-auth/oauth-provider@1.7.16
-pnpm exec better-convex init --typed-client
+pnpm exec better-convex-nuxt auth init --typed-client
 ```
 
 The command shows every file it will write and asks before it writes. It asks again before it sets development secrets or creates the first signing key. It writes the proxy secret to `.env.local` and sets the same value in Convex. `--typed-client` also writes `app/convex-auth.ts`, the file for Better Auth client plugins. The command does not configure production.

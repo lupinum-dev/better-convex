@@ -4,6 +4,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { runConvexCommand } from './convex'
+import { runDevCommand } from './dev'
 import { runInitCommand } from './init'
 import { rethrowAuthSchemaImportError } from './optional-auth'
 
@@ -12,10 +13,11 @@ function usage(): string {
     'Better Convex project tooling.',
     '',
     'Usage:',
-    '  better-convex init',
-    '  better-convex convex <command> [options]',
-    '  better-convex auth schema --config <schema-options.ts> [options]',
-    '  better-convex --version',
+    '  better-convex-nuxt dev [nuxt dev options]',
+    '  better-convex-nuxt convex <command> [options]',
+    '  better-convex-nuxt auth init [options]',
+    '  better-convex-nuxt auth schema --config <schema-options.ts> [options]',
+    '  better-convex-nuxt --version',
   ].join('\n')
 }
 
@@ -39,6 +41,9 @@ export async function runBetterConvexCommand(arguments_: readonly string[]): Pro
     console.log(packageVersion())
     return 0
   }
+  if (command === 'dev') {
+    return await runDevCommand(subcommand === undefined ? rest : [subcommand, ...rest])
+  }
   if (command === 'convex') {
     if (!subcommand) throw new Error('The convex command requires a Convex subcommand.')
     return await runConvexCommand([subcommand, ...rest])
@@ -49,8 +54,8 @@ export async function runBetterConvexCommand(arguments_: readonly string[]): Pro
     )
     return await runAuthSchemaCommand(rest)
   }
-  if (command === 'init') {
-    return await runInitCommand(subcommand ? [subcommand, ...rest] : rest)
+  if (command === 'auth' && subcommand === 'init') {
+    return await runInitCommand(rest)
   }
   throw new Error(`Unknown command: ${command}`)
 }
@@ -68,7 +73,7 @@ if (invokedAsScript) {
   try {
     process.exitCode = await runBetterConvexCommand(process.argv.slice(2))
   } catch (error) {
-    console.error(`[better-convex] ${error instanceof Error ? error.message : 'failed'}`)
+    console.error(`[better-convex-nuxt] ${error instanceof Error ? error.message : 'failed'}`)
     process.exitCode = 1
   }
 }
