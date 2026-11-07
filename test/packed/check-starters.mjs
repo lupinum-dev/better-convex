@@ -42,6 +42,11 @@ const env = {
   NUXT_TELEMETRY_DISABLED: '1',
   SITE_URL: 'http://127.0.0.1:3000',
 }
+const STARTER_QUARANTINE = [
+  'minimumReleaseAge: 1440',
+  'minimumReleaseAgeStrict: true',
+  'minimumReleaseAgeIgnoreMissingTime: false',
+]
 const run = (command, args, cwd, extra = {}) =>
   execFileSync(command, args, { cwd, stdio: 'inherit', env: { ...env, ...extra } })
 
@@ -106,13 +111,17 @@ try {
     const workspacePath = join(app, 'pnpm-workspace.yaml')
     const own = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
     // A user's copy of a starter must fail on a too-young version: without strict mode, pnpm 11
-    // quietly adds it to minimumReleaseAgeExclude and installs it.
-    if (starter && !/^minimumReleaseAgeStrict: true$/m.test(own)) {
-      throw new Error(`${path}/pnpm-workspace.yaml must set minimumReleaseAgeStrict: true`)
+    // quietly adds it to minimumReleaseAgeExclude and installs it (D73).
+    if (starter) {
+      const missing = STARTER_QUARANTINE.filter((line) => !own.split(/\r?\n/).includes(line))
+      if (missing.length > 0 || /^minimumReleaseAgeExclude:/m.test(own)) {
+        throw new Error(
+          `${path}/pnpm-workspace.yaml must set ${STARTER_QUARANTINE.join(', ')} and no minimumReleaseAgeExclude`,
+        )
+      }
     }
-    const quarantine = /^minimumReleaseAge:/m.test(own)
-      ? RELEASE_AGE_EXCLUDE_YAML
-      : RELEASE_AGE_YAML
+    // The scratch copy adds the root's urgent exclusions, so every scratch install honours them.
+    const quarantine = starter ? RELEASE_AGE_EXCLUDE_YAML : RELEASE_AGE_YAML
     const workspace = `${own}${quarantine}overrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
     writeFileSync(workspacePath, nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace)
 
