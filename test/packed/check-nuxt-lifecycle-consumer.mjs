@@ -77,10 +77,10 @@ async function availablePort() {
   return port
 }
 
-async function waitForServer(origin, child) {
-  const deadline = Date.now() + 30_000
+async function waitForServer(origin, child, label = 'Production Nitro', timeout = 30_000) {
+  const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`Production Nitro exited with ${child.exitCode}`)
+    if (child.exitCode !== null) throw new Error(`${label} exited with ${child.exitCode}`)
     try {
       const response = await fetch(origin, {
         signal: AbortSignal.timeout(1_000),
@@ -91,18 +91,21 @@ async function waitForServer(origin, child) {
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 75))
   }
-  throw new Error('Timed out waiting for the production Nuxt lifecycle consumer')
+  throw new Error(`Timed out waiting for ${label}`)
 }
 
 async function stop(child) {
   if (!child || child.exitCode !== null) return
-  child.kill('SIGTERM')
+  // `nuxi dev` runs the server in a forked child, so stop the whole process group.
+  const signal = (name) =>
+    child.spawnargs.includes('dev') ? process.kill(-child.pid, name) : child.kill(name)
+  signal('SIGTERM')
   const stopped = await Promise.race([
     new Promise((resolvePromise) => child.once('exit', () => resolvePromise(true))),
     new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), 3_000)),
   ])
   if (!stopped) {
-    child.kill('SIGKILL')
+    signal('SIGKILL')
     if (child.exitCode === null)
       await new Promise((resolvePromise) => child.once('exit', resolvePromise))
   }
@@ -132,6 +135,44 @@ function productionJavaScript(outputDirectory) {
   }
   visit(publicDirectory)
   return files.map((path) => readFileSync(path, 'utf8')).join('\n')
+}
+
+async function openProbe(browser, origin, timeout = 30_000) {
+  const page = await browser.newPage()
+  const pageErrors = []
+  const consoleMessages = []
+  const consoleErrors = []
+  const failedRequests = []
+  const failedResponses = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('console', (message) => {
+    consoleMessages.push(`[${message.type()}] ${message.text()}`)
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('requestfailed', (request) => {
+    failedRequests.push(`${request.method()} ${request.url()}`)
+  })
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
+  })
+  await page.goto(origin, { waitUntil: 'networkidle', timeout })
+  try {
+    await page.waitForFunction(() => Boolean(window.__betterConvexNuxtLifecycle), null, { timeout })
+  } catch (error) {
+    throw new Error(
+      `Lifecycle probe did not mount at ${origin}: ${JSON.stringify({
+        consoleMessages: boundedBrowserDiagnostics(consoleMessages),
+        consoleErrors: boundedBrowserDiagnostics(consoleErrors),
+        failedRequests: boundedBrowserDiagnostics(failedRequests),
+        failedResponses: boundedBrowserDiagnostics(failedResponses),
+        // The visible text holds Nuxt's error page, which names the error in dev.
+        text: (await page.locator('body').allInnerTexts()).join('\n').slice(0, 2_000),
+        pageErrors: boundedBrowserDiagnostics(pageErrors),
+      })}`,
+      { cause: error },
+    )
+  }
+  return { page, pageErrors, consoleErrors, failedRequests }
 }
 
 const options = parseArguments(process.argv.slice(2))
@@ -228,39 +269,7 @@ try {
   }
 
   browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage()
-  const pageErrors = []
-  const consoleMessages = []
-  const consoleErrors = []
-  const failedRequests = []
-  const failedResponses = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
-  page.on('console', (message) => {
-    consoleMessages.push(`[${message.type()}] ${message.text()}`)
-    if (message.type() === 'error') consoleErrors.push(message.text())
-  })
-  page.on('requestfailed', (request) => {
-    failedRequests.push(`${request.method()} ${request.url()}`)
-  })
-  page.on('response', (response) => {
-    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`)
-  })
-  await page.goto(origin, { waitUntil: 'networkidle' })
-  try {
-    await page.waitForFunction(() => Boolean(window.__betterConvexNuxtLifecycle))
-  } catch (error) {
-    throw new Error(
-      `Lifecycle probe did not mount: ${JSON.stringify({
-        consoleMessages: boundedBrowserDiagnostics(consoleMessages),
-        consoleErrors: boundedBrowserDiagnostics(consoleErrors),
-        failedRequests: boundedBrowserDiagnostics(failedRequests),
-        failedResponses: boundedBrowserDiagnostics(failedResponses),
-        html: (await page.content()).slice(-4_000),
-        pageErrors: boundedBrowserDiagnostics(pageErrors),
-      })}`,
-      { cause: error },
-    )
-  }
+  const { page, pageErrors, consoleErrors, failedRequests } = await openProbe(browser, origin)
 
   const invoke = (method, ...args) =>
     page.evaluate(
@@ -395,6 +404,40 @@ try {
   }
 
   console.log('Exact-package production Nuxt lifecycle consumer passed.')
+
+  // `nuxt dev` loads dependencies through Vite's pre-bundling, which a production build never
+  // uses. When Vite loaded two copies of the Vue package there, every composable failed with
+  // "plugin is not installed", while the production build above passed.
+  await stop(server)
+  const devPort = await availablePort()
+  const devOrigin = `http://127.0.0.1:${devPort}`
+  server = spawn(
+    process.execPath,
+    [
+      join(consumerRoot, 'node_modules/nuxt/bin/nuxt.mjs'),
+      'dev',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(devPort),
+    ],
+    {
+      cwd: consumerRoot,
+      detached: true,
+      env: { ...process.env, NODE_ENV: 'development', NUXT_TELEMETRY_DISABLED: '1' },
+      stdio: 'ignore',
+    },
+  )
+  await waitForServer(devOrigin, server, 'nuxt dev', 120_000)
+  const dev = await openProbe(browser, devOrigin, 120_000)
+  const devSnapshot = await dev.page.evaluate(() =>
+    window.__betterConvexNuxtLifecycle.emitQuery([{ id: 'dev-a' }]),
+  )
+  assertDeepEqual(devSnapshot.query.data, [{ id: 'dev-a' }], 'Live query data in nuxt dev')
+  if (dev.pageErrors.length) {
+    throw new Error(`nuxt dev browser errors: ${JSON.stringify(dev.pageErrors)}`)
+  }
+  console.log('Exact-package Nuxt lifecycle consumer passed in nuxt dev.')
 } finally {
   await browser?.close()
   await stop(server)

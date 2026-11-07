@@ -281,7 +281,10 @@ function createAttachedBrowserFacade(
 
 export function useBetterConvexRuntime(): BetterConvexVueRuntime {
   const runtime = useOptionalBetterConvexRuntime()
-  if (!runtime) throw new Error('[better-convex-vue] plugin is not installed in this Vue app')
+  if (!runtime)
+    throw new Error(
+      '[better-convex-vue] plugin is not installed in this Vue app. Install `createBetterConvex()` (in Nuxt: set a Convex URL), and make sure the page loads only one copy of @lupinum/better-convex-vue.',
+    )
   return runtime
 }
 
