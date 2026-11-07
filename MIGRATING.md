@@ -5,12 +5,12 @@ The full guide, with old and new code for every change, is
 (source: `docs/content/docs/6.operations/7.upgrade-to-1-0.md`). This file is the
 checklist. It covers the move from `@lupinum/better-convex-nuxt` and
 `@lupinum/better-convex-vue` `1.0.0-beta.7`, and `@lupinum/better-convex-mcp`
-`1.0.0-beta.2`, to the 1.0 release candidate. 1.0 has no compatibility layer: the old names
+`1.0.0-beta.2`, to 1.0. 1.0 has no compatibility layer: the old names
 are gone, and TypeScript reports most places that you must change.
 
 ## From 1.0.0-rc.1
 
-If you already run the release candidate, check only these:
+If you already run a 1.0 release candidate, check only these:
 
 - [ ] Rename the command in `package.json` scripts and CI: `better-convex convex`
       becomes `better-convex-nuxt convex`, and `better-convex init` becomes
@@ -30,8 +30,8 @@ If you already run the release candidate, check only these:
 - [ ] Local auth component: regenerate the schema and export `pruneRateLimits`.
 - [ ] Local auth component: export `expireVerification` (no schema change).
 - [ ] MCP: `@lupinum/better-convex-mcp` is now `@lupinum/better-convex-agents`.
-      Install `@lupinum/better-convex-agents@next` and
-      `@lupinum/better-convex-functions@next` (a peer), remove
+      Install `@lupinum/better-convex-agents` and
+      `@lupinum/better-convex-functions` (a peer), remove
       `@lupinum/better-convex-mcp`, and import `handleMcpRequest`,
       `projectMcpToolError` and the verifier types from
       `@lupinum/better-convex-agents/mcp`, `listMcpCatalog` too. Install
@@ -48,7 +48,7 @@ If you already run the release candidate, check only these:
       `tools.runTool(name, operation)` inside `configureServer`.
 - [ ] MCP without `defineFunctions` (your own `handleMcpRequest` and
       `server.registerTool` calls, as in ginko-cms): install
-      `@lupinum/better-convex-functions@next` anyway, at the same version as
+      `@lupinum/better-convex-functions` anyway, at the same version as
       the agents package; it is a required peer. Then replace each
       `runMcpTool(operation, { name })` with `tools.runTool(name, operation)`,
       where `tools` comes from the `configureServer` argument.
@@ -75,10 +75,9 @@ If you already run the release candidate, check only these:
 
 ## Packages and data
 
-- [ ] Install `@lupinum/better-convex-nuxt@next` (or
-      `@lupinum/better-convex-vue@next`) and, with MCP, `@lupinum/better-convex-agents@next`
-      and `@lupinum/better-convex-functions@next` (they replace `@lupinum/better-convex-mcp`).
-      The `next` dist-tag is the 1.0 release candidate.
+- [ ] Install `@lupinum/better-convex-nuxt` (or
+      `@lupinum/better-convex-vue`) and, with MCP, `@lupinum/better-convex-agents`
+      and `@lupinum/better-convex-functions` (they replace `@lupinum/better-convex-mcp`).
 - [ ] With auth, install `better-auth`, `@better-auth/core`, and
       `@better-auth/oauth-provider` at exactly `1.7.12`, even without MCP.
 - [ ] With MCP, install `@modelcontextprotocol/server@2.3.1`; MCP Apps use
@@ -221,7 +220,7 @@ If you already run the release candidate, check only these:
       `renewal: false`; beta tokens without it are rejected and hosts sign in
       again. Disabling an OAuth resource rejects tokens already issued.
 - [ ] Install the MCP SDK yourself; it is an exact peer:
-      `pnpm add @lupinum/better-convex-agents@next @lupinum/better-convex-functions@next @modelcontextprotocol/server@2.3.1`.
+      `pnpm add @lupinum/better-convex-agents @lupinum/better-convex-functions @modelcontextprotocol/server@2.3.1`.
 - [ ] Internal MCP functions take `principal: mcpPrincipalValidator` and call
       `auth.requireMcpPrincipal(ctx, principal, { scope })`.
 - [ ] Requests without the `MCP-Protocol-Version` header get HTTP `400`.
