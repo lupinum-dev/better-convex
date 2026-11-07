@@ -7,6 +7,15 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 const git = (...args) => spawnSync('git', args, { encoding: 'utf8' })
 const bumps = text => [...text.matchAll(/^\s*['"]?([^\s'":]+)['"]?\s*:\s*['"]?(major|minor|patch)['"]?\s*$/gm)].map(([, name, bump]) => ({ name, bump }))
 
+// A package at 1.0.0 or later follows semver: a breaking change must bump its major version.
+const stable = new Set(
+  ['package.json', ...(existsSync('packages') ? readdirSync('packages').map(dir => `packages/${dir}/package.json`) : [])]
+    .filter(path => existsSync(path))
+    .map(path => JSON.parse(readFileSync(path, 'utf8')))
+    .filter(({ version }) => Number(version?.split('.')[0]) >= 1)
+    .map(({ name }) => name),
+)
+
 const failures = []
 for (const file of readdirSync('.changeset').filter(name => name.endsWith('.md') && name !== 'README.md')) {
   const match = /^---\r?\n([\s\S]*?)^---\r?\n?([\s\S]*)$/m.exec(readFileSync(`.changeset/${file}`, 'utf8'))
@@ -24,6 +33,11 @@ for (const file of readdirSync('.changeset').filter(name => name.endsWith('.md')
   if (summary.trim().includes('\n')) failures.push(`${file}: keep the summary to one line. Put details after a blank line.`)
   if (bumps(frontMatter).some(({ bump }) => bump === 'major') && !details.some(part => /^Migration:/m.test(part))) {
     failures.push(`${file}: a major change needs a "Migration:" line that tells users what to do.`)
+  }
+  if (details.some(part => /^Migration:/m.test(part))) {
+    for (const { name, bump } of bumps(frontMatter)) {
+      if (stable.has(name) && bump !== 'major') failures.push(`${file}: a "Migration:" line is a breaking change, so ${name} needs a major bump.`)
+    }
   }
 }
 

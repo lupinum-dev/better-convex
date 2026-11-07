@@ -133,8 +133,9 @@ starts one with synthetic auth secrets. Remove `playground/.convex` and
   or Change and says what changed for users. At most five short lines of
   detail may follow. A breaking change adds a line that starts with
   `Migration:` and says what users must do.
-- The repository is in Changesets prerelease mode (`rc`) until 1.0.0; see
-  internals/decisions.md before you run `changeset pre exit`.
+- Since 1.0.0, a breaking change (a changeset with a `Migration:` line) to
+  `@lupinum/better-convex-nuxt` or `-vue` is `major`. `-functions` and
+  `-agents` are still `0.x` (D31), so a breaking change there is `minor`.
 - Do not bypass the 24-hour dependency quarantine (`minimumReleaseAge`). Do not
   add dependencies to `allowBuilds` without a reason.
 - Pin GitHub Actions to full commit SHAs. Give each job only the permissions it needs.
