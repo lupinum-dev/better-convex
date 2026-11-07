@@ -103,7 +103,7 @@ function checkOptionalAuthCli(tarball) {
   try {
     execFileSync('tar', ['-xzf', tarball, '-C', consumer, '--strip-components=1'])
     const manifest = JSON.parse(readFileSync(join(consumer, 'package.json'), 'utf8'))
-    const cli = join(consumer, manifest.bin['better-convex'])
+    const cli = join(consumer, manifest.bin['better-convex-nuxt'])
     const require = createRequire(cli)
     const peers = ['better-auth', '@better-auth/core', '@better-auth/oauth-provider']
     for (const peer of peers) {
@@ -112,7 +112,8 @@ function checkOptionalAuthCli(tarball) {
     for (const [args, expected] of [
       [['--help'], 'Usage:'],
       [['--version'], manifest.version],
-      [['init', '--help'], 'Usage: better-convex init'],
+      [['auth', 'init', '--help'], 'Usage: better-convex-nuxt auth init'],
+      [['dev', '--help'], 'Run `convex dev` and `nuxt dev` together'],
       [['convex', '--help'], 'Run the pinned Convex CLI'],
     ]) {
       const result = spawnSync(process.execPath, [cli, ...args], {
@@ -131,10 +132,10 @@ function checkOptionalAuthCli(tarball) {
     const install = peers.map((peer) => `${peer}@${manifest.peerDependencies[peer]}`).join(' ')
     assert.equal(
       auth.stderr.trim(),
-      `[better-convex] better-convex auth schema needs the optional Better Auth packages. Install them with: pnpm add ${install}`,
+      `[better-convex-nuxt] better-convex-nuxt auth schema needs the optional Better Auth packages. Install them with: pnpm add ${install}`,
     )
     console.log(
-      'Packed CLI without Better Auth: help, version, init/convex help and auth install hint passed.',
+      'Packed CLI without Better Auth: help, version, auth init/dev/convex help and auth install hint passed.',
     )
   } finally {
     rmSync(consumer, { recursive: true, force: true })

@@ -64,7 +64,7 @@ function createHarness(confirmations: boolean[] = [true, true, true]): Harness {
   }
 }
 
-describe.sequential('better-convex init', () => {
+describe.sequential('better-convex-nuxt auth init', () => {
   let root: string
   let previousCwd: string
 

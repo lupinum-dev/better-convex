@@ -76,11 +76,12 @@ export const { consumeOne, consumeRateLimit, count, create, deleteMany, deleteOn
 
 export default defineComponent('betterAuth')
 `,
-  'convex/betterAuth/schemaPlugins.ts': `import { jwt, organization } from 'better-auth/plugins'
+  'convex/betterAuth/schemaPlugins.ts': `import { jwt } from 'better-auth/plugins'
 
+// Plugins that add tables, such as organization() or twoFactor(), go here and in convex/auth.ts.
+// Regenerate the schema after a change: pnpm exec better-convex-nuxt auth schema
 export function createAuthSchemaPlugins(authIssuer: string) {
   return [
-    organization(),
     jwt({
       disableSettingJwtHeader: true,
       jwks: { disablePrivateKeyEncryption: false, gracePeriod: 21 * 60, keyPairConfig: { alg: 'RS256' } },
@@ -130,7 +131,7 @@ function defaultDependencies(root: string): InitDependencies & { close(): void }
     authorityPromise ??= inspectConvexAuthority(root)
     const authority = await authorityPromise
     if (!authority.development) {
-      throw new Error('better-convex init refuses production or unclassified authority')
+      throw new Error('auth init refuses production or unclassified authority')
     }
     return authority
   }
@@ -222,7 +223,7 @@ function parseArguments(args: readonly string[]): InitArguments {
       if (!value) throw new Error('--site-url requires an origin')
       parsed.siteUrl = normalizeAuthOrigin(value, 'SITE_URL')
     } else if (argument === '--prod' || argument === '--production') {
-      throw new Error('better-convex init refuses production provisioning')
+      throw new Error('auth init refuses production provisioning')
     } else throw new Error(`Unknown init argument: ${argument}`)
   }
   return parsed
@@ -337,7 +338,7 @@ async function provisionDevelopment(root: string, dependencies: InitDependencies
   } else {
     if (localSiteUrl !== undefined && localSiteUrl !== siteUrl) {
       throw new Error(
-        `${LOCAL_ENV_FILE} sets SITE_URL=${localSiteUrl}, but you entered ${siteUrl}. Nuxt and Convex must use the same origin: change ${LOCAL_ENV_FILE} or enter ${localSiteUrl}, then rerun init.`,
+        `${LOCAL_ENV_FILE} sets SITE_URL=${localSiteUrl}, but you entered ${siteUrl}. Nuxt and Convex must use the same origin: change ${LOCAL_ENV_FILE} or enter ${localSiteUrl}, then rerun auth init.`,
       )
     }
     await ensureLocalEnvironmentValue(root, 'SITE_URL', () => siteUrl, dependencies)
@@ -348,7 +349,7 @@ async function provisionDevelopment(root: string, dependencies: InitDependencies
     const status = await dependencies.runConvex(['env', 'set', name], value)
     if (status !== 0) {
       throw new Error(
-        `development provisioning stopped after: ${completed.join(', ') || 'no external steps'}. Failed to set ${name}; rerun init to continue.`,
+        `development provisioning stopped after: ${completed.join(', ') || 'no external steps'}. Failed to set ${name}; rerun auth init to continue.`,
       )
     }
     environmentNames.add(name)
@@ -372,7 +373,7 @@ async function provisionDevelopment(root: string, dependencies: InitDependencies
   const ensured = await dependencies.runConvex(['run', 'auth:ensureSigningKey', '{}'])
   if (ensured !== 0) {
     throw new Error(
-      `development provisioning stopped after: ${completed.join(', ')}. Signing-key provisioning failed; rerun init to continue.`,
+      `development provisioning stopped after: ${completed.join(', ')}. Signing-key provisioning failed; rerun auth init to continue.`,
     )
   }
   completed.push('signing key')
@@ -387,7 +388,7 @@ export async function runInitCommand(
   if (parsed.help) {
     console.log(
       [
-        'Usage: better-convex init [--typed-client] [--yes] [--site-url <origin>]',
+        'Usage: better-convex-nuxt auth init [--typed-client] [--yes] [--site-url <origin>]',
         '',
         '  --typed-client       Also write app/convex-auth.ts.',
         '  --yes, -y            Accept every step without asking (for scripts and CI).',
@@ -449,7 +450,7 @@ async function initialize(
   )
   if (schemaStatus !== 0) {
     throw new Error(
-      'Generated auth schema conflicts with the reviewed plugin profile. Run better-convex auth schema and review the diff manually.',
+      'Generated auth schema conflicts with the reviewed plugin profile. Run better-convex-nuxt auth schema and review the diff manually.',
     )
   }
   const authorityLabel = await dependencies.readDevelopmentAuthorityLabel()

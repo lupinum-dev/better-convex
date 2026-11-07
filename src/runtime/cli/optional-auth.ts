@@ -14,7 +14,7 @@ export function rethrowAuthSchemaImportError(error: unknown): never {
     const packages = ['better-auth', '@better-auth/core', '@better-auth/oauth-provider']
     const install = packages.map((name) => `${name}@${manifest.peerDependencies[name]}`).join(' ')
     throw new Error(
-      `better-convex auth schema needs the optional Better Auth packages. Install them with: pnpm add ${install}`,
+      `better-convex-nuxt auth schema needs the optional Better Auth packages. Install them with: pnpm add ${install}`,
       { cause: error },
     )
   }

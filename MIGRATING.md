@@ -12,6 +12,9 @@ are gone, and TypeScript reports most places that you must change.
 
 If you already run the release candidate, check only these:
 
+- [ ] Rename the command in `package.json` scripts and CI: `better-convex convex`
+      becomes `better-convex-nuxt convex`, and `better-convex init` becomes
+      `better-convex-nuxt auth init`.
 - [ ] Replace `status === 'loading'` with `status === 'pending'` on
       `useConvexAuth()`. Keep your own `ref` around a sign-in or sign-out call
       to disable a button; `pending` no longer covers it.
@@ -94,7 +97,7 @@ If you already run the release candidate, check only these:
       `invalid_grant`; MCP hosts and other OAuth clients sign in again. The
       old rows can stay.
 - [ ] Regenerate a local auth component schema with
-      `better-convex auth schema`.
+      `better-convex-nuxt auth schema`.
 
 ## Removed APIs
 
