@@ -8,6 +8,9 @@ import { hasConvexAuthorityFile, resolveConvexInvocation } from './convex'
 const LOCAL_ENV_FILE = '.env.local'
 // Nuxt needs the deployment URLs from `.env.local`, not the deployment selector or keys.
 const NUXT_CONVEX_NAMES = new Set(['CONVEX_SITE_URL', 'CONVEX_URL'])
+// Convex names the URL variables after the framework it finds in package.json, for example
+// VITE_CONVEX_URL when `vite` is a dependency. The module reads CONVEX_URL and CONVEX_SITE_URL.
+const CONVEX_URL_PREFIXES = ['', 'VITE_', 'PUBLIC_', 'NEXT_PUBLIC_', 'REACT_APP_', 'EXPO_PUBLIC_']
 
 function usage(): string {
   return [
@@ -36,6 +39,16 @@ async function readLocalEnvironment(cwd: string): Promise<Record<string, string>
         (!entry[0].toUpperCase().startsWith('CONVEX_') || NUXT_CONVEX_NAMES.has(entry[0])),
     ),
   )
+}
+
+/** The deployment URLs under the names the module reads, whatever names Convex wrote. */
+function deploymentUrls(local: Readonly<Record<string, string>>): Record<string, string> {
+  const urls: Record<string, string> = {}
+  for (const name of NUXT_CONVEX_NAMES) {
+    const value = CONVEX_URL_PREFIXES.map((prefix) => local[`${prefix}${name}`]).find(Boolean)
+    if (value) urls[name] = value
+  }
+  return urls
 }
 
 /** Copy a child's output with a name in front of every line; partial lines (prompts) pass at once. */
@@ -102,7 +115,7 @@ export async function runDevCommand(
     // Nuxt reads the deployment URL once at startup, and a first run writes it only after the
     // backend is up.
     let local = await readLocalEnvironment(cwd)
-    while (!local.CONVEX_URL) {
+    while (!deploymentUrls(local).CONVEX_URL) {
       const stopped = await Promise.race([
         convexExit.then(() => true),
         new Promise<false>((resolvePromise) => setTimeout(() => resolvePromise(false), 250)),
@@ -119,7 +132,11 @@ export async function runDevCommand(
     const nuxtChild = spawn(
       process.execPath,
       [resolve(cwd, 'node_modules/nuxt/bin/nuxt.mjs'), 'dev', ...args],
-      { cwd, env: { ...process.env, ...local, ...color }, stdio: ['ignore', 'pipe', 'pipe'] },
+      {
+        cwd,
+        env: { ...process.env, ...local, ...deploymentUrls(local), ...color },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
     )
     children.push(nuxtChild)
     forward(nuxtChild.stdout, process.stdout, '[nuxt]  ')
