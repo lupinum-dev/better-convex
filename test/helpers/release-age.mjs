@@ -9,7 +9,9 @@ const root = readFileSync(new URL('../../pnpm-workspace.yaml', import.meta.url),
   /\r\n/g,
   '\n',
 )
-const exclude = /^minimumReleaseAgeExclude:\n(?:[ \t]+-.*\n)+/m.exec(root)?.[0] ?? ''
+/** The root exclusions alone, as pnpm-workspace.yaml lines (empty when there are none). */
+export const RELEASE_AGE_EXCLUDE_YAML =
+  /^minimumReleaseAgeExclude:\n(?:[ \t]+-.*\n)+/m.exec(root)?.[0] ?? ''
 
 /** `minimumReleaseAge` plus the root exclusions, as pnpm-workspace.yaml lines. */
-export const RELEASE_AGE_YAML = `minimumReleaseAge: 1440\n${exclude}`
+export const RELEASE_AGE_YAML = `minimumReleaseAge: 1440\n${RELEASE_AGE_EXCLUDE_YAML}`

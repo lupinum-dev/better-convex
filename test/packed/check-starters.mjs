@@ -21,7 +21,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { RELEASE_AGE_YAML } from '../helpers/release-age.mjs'
+import { RELEASE_AGE_EXCLUDE_YAML, RELEASE_AGE_YAML } from '../helpers/release-age.mjs'
 import { packWorkspace } from './check-packed.mjs'
 import { toNuxt5Manifest, toNuxt5Workspace } from './nuxt5-lane.mjs'
 
@@ -105,7 +105,15 @@ try {
     // Keep the app's own settings (a starter's build approvals) and add the packed-release ones.
     const workspacePath = join(app, 'pnpm-workspace.yaml')
     const own = existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : ''
-    const workspace = `${own}${RELEASE_AGE_YAML}overrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
+    // A user's copy of a starter must fail on a too-young version: without strict mode, pnpm 11
+    // quietly adds it to minimumReleaseAgeExclude and installs it.
+    if (starter && !/^minimumReleaseAgeStrict: true$/m.test(own)) {
+      throw new Error(`${path}/pnpm-workspace.yaml must set minimumReleaseAgeStrict: true`)
+    }
+    const quarantine = /^minimumReleaseAge:/m.test(own)
+      ? RELEASE_AGE_EXCLUDE_YAML
+      : RELEASE_AGE_YAML
+    const workspace = `${own}${quarantine}overrides:\n  '@lupinum/better-convex-vue': file:./vue.tgz\n`
     writeFileSync(workspacePath, nuxt5 ? toNuxt5Workspace(workspace, ['nuxt']) : workspace)
 
     console.log(

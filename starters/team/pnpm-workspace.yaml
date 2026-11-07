@@ -1,3 +1,10 @@
+# Dependency quarantine: never install a version younger than 24 hours, including
+# @lupinum/* packages. Strict mode fails instead of letting pnpm quietly add a
+# too-young version to minimumReleaseAgeExclude.
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+
 # pnpm 11 fails the install when a dependency's build script is not approved here.
 # esbuild's script only checks that its platform binary is installed.
 allowBuilds:
