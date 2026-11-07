@@ -1,5 +1,14 @@
 # @lupinum/better-convex-vue
 
+## 1.0.0-rc.10
+
+### Patch Changes
+
+- [#337](https://github.com/lupinum-dev/better-convex/pull/337) [`f75decc`](https://github.com/lupinum-dev/better-convex/commit/f75deccfd3484a28b10ecc37a2d118964c48a247) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix every Convex composable failing with "plugin is not installed" in `nuxt dev` when the module comes from npm.
+  
+  Vite loaded two copies of the Vue package in the browser. The module now keeps it out of Vite's dependency pre-bundling.
+  The error now also names a second copy of the package as a possible cause.
+
 ## 1.0.0-rc.9
 
 ### Patch Changes

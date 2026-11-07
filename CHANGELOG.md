@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.0-rc.10
+
+### Minor Changes
+
+- [#338](https://github.com/lupinum-dev/better-convex/pull/338) [`cd57aed`](https://github.com/lupinum-dev/better-convex/commit/cd57aed86a10623cca7d42f8220ed2bfc8ca2a0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the command from `better-convex` to `better-convex-nuxt`, and add `better-convex-nuxt dev`, which runs Convex and Nuxt together.
+  
+  `dev` starts a local backend without an account when `.env.local` selects no deployment, and passes the deployment URL to Nuxt.
+  `init` is now `auth init`, and it no longer adds the unused `organization()` plugin to the auth schema.
+  `convex dashboard` now runs through the command.
+  Migration: in `package.json` scripts and CI, replace `better-convex convex` with `better-convex-nuxt convex` and `better-convex init` with `better-convex-nuxt auth init`.
+
+### Patch Changes
+
+- [#339](https://github.com/lupinum-dev/better-convex/pull/339) [`6859314`](https://github.com/lupinum-dev/better-convex/commit/6859314cc40cde9bf8f109ce14b0587562836581) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `better-convex-nuxt auth init` to keep the auth files when every one of them already exists, instead of stopping.
+  
+  A rerun after you edited `convex/auth.ts`, or a run in a starter that ships its own auth files, now continues with the schema check, the secrets and the signing key. When some auth files are missing and others differ from their templates, it still stops without changes.
+
+- [#337](https://github.com/lupinum-dev/better-convex/pull/337) [`f75decc`](https://github.com/lupinum-dev/better-convex/commit/f75deccfd3484a28b10ecc37a2d118964c48a247) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix every Convex composable failing with "plugin is not installed" in `nuxt dev` when the module comes from npm.
+  
+  Vite loaded two copies of the Vue package in the browser. The module now keeps it out of Vite's dependency pre-bundling.
+  The error now also names a second copy of the package as a possible cause.
+- Updated dependencies [[`f75decc`](https://github.com/lupinum-dev/better-convex/commit/f75deccfd3484a28b10ecc37a2d118964c48a247)]:
+  - @lupinum/better-convex-vue@1.0.0-rc.10
+
 ## 1.0.0-rc.9
 
 ### Patch Changes
