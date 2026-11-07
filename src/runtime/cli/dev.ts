@@ -143,11 +143,12 @@ export async function runDevCommand(
     forward(nuxtChild.stderr, process.stderr, '[nuxt]  ')
     const nuxtExit = exited(nuxtChild)
 
-    // When one side stops, stop the other: half a dev setup only produces confusing errors.
+    // When one side stops, stop the other: half a dev setup only produces confusing errors. The
+    // side that stopped first sets the status; the other one exits because dev stopped it.
     const first = await Promise.race([convexExit, nuxtExit])
     stopAll()
-    const [convexCode, nuxtCode] = await Promise.all([convexExit, nuxtExit])
-    return first || convexCode || nuxtCode
+    await Promise.all([convexExit, nuxtExit])
+    return first
   } finally {
     process.off('SIGINT', onSignal)
     process.off('SIGTERM', onSignal)
