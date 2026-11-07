@@ -242,16 +242,20 @@ async function inspectFiles(
   for (const [relativePath, contents] of Object.entries(entries)) {
     const path = join(root, relativePath)
     const existing = await readOptional(path)
-    if (existing === undefined) missing += 1
+    // The optional typed client may be added to an app whose auth files are already set up.
+    if (existing === undefined) missing += relativePath === TYPED_CLIENT_PATH ? 0 : 1
     else if (existing !== contents) conflicts.push(relativePath)
     planned.push({ path, contents, exists: existing === contents })
   }
   if (conflicts.length === 0) return planned
-  // Every file exists: an app that was set up before (a starter, or a rerun after editing
-  // convex/auth.ts). Keep its files and continue with the schema check and the secrets.
+  // Every auth file exists: an app that was set up before (a starter, or a rerun after editing
+  // convex/auth.ts). Keep its files, write only a missing typed client, and continue with the
+  // schema check and the secrets.
   if (missing === 0) {
     log(`Keeping the existing auth files: ${conflicts.join(', ')}.`)
-    return planned.map((file) => ({ ...file, exists: true }))
+    return planned.map((file) =>
+      conflicts.includes(file.path.slice(root.length + 1)) ? { ...file, exists: true } : file,
+    )
   }
   throw new Error(
     `initializer found conflicting files and wrote nothing: ${conflicts.join(', ')}. Move or merge them manually, then rerun.`,

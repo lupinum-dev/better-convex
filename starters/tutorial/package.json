@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "better-convex-nuxt dev",
-    "build": "nuxt build",
-    "preview": "nuxt preview",
+    "build": "nuxt build --dotenv .env.local",
+    "preview": "nuxt preview --dotenv .env.local",
     "test": "vitest run",
-    "typecheck": "nuxt typecheck && tsc -p convex --noEmit"
+    "typecheck": "nuxt typecheck --dotenv .env.local && tsc -p convex --noEmit"
   },
   "dependencies": {
     "@better-auth/core": "1.7.16",

@@ -286,7 +286,20 @@ describe.sequential('better-convex-nuxt auth init', () => {
     expect(await read('convex/auth.ts')).toBe('application-owned auth\n')
     expect(fresh.logs).toContain('Keeping the existing auth files: convex/auth.ts.')
     expect(fresh.environment.get('SITE_URL')).toBe('http://localhost:4173')
+    expect(fresh.environment.get('BETTER_AUTH_SECRETS')).toBeTruthy()
+    expect(fresh.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBeTruthy()
     expect(fresh.convexCalls.some(({ args }) => args[1] === 'auth:ensureSigningKey')).toBe(true)
+  })
+
+  it('adds the typed client to a setup with edited auth files', async () => {
+    const harness = createHarness()
+    await runInitCommand([], harness.dependencies)
+    await writeFile(join(root, 'convex/auth.ts'), 'application-owned auth\n')
+
+    await expect(runInitCommand(['--typed-client'], createHarness().dependencies)).resolves.toBe(0)
+
+    expect(await read('convex/auth.ts')).toBe('application-owned auth\n')
+    expect(await read('app/convex-auth.ts')).toContain('defineConvexAuthClient')
   })
 
   it('stops before all writes when an existing setup conflicts', async () => {

@@ -19,6 +19,7 @@ form {
 }
 form input {
   flex: 1;
+  min-width: 0;
 }
 input,
 button {
@@ -47,6 +48,6 @@ li span {
   opacity: 0.7;
 }
 .error {
-  color: #d33;
+  color: light-dark(#c00, #f77);
 }
 </style>
