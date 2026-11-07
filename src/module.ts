@@ -357,6 +357,16 @@ export default defineNuxtModule<ModuleOptions>({
     // browser loads convex unbundled (Vite leaves transpiled packages out of `optimizeDeps`).
     if (!nuxt.options.build.transpile.includes('convex'))
       nuxt.options.build.transpile.push('convex')
+    // In dev, Vite pre-bundles the Vue package for the client plugin but serves the `/internal`
+    // entry that the composables import as a plain file. Each copy has its own injection key, so
+    // every composable failed with "plugin is not installed". Serving the package unbundled keeps
+    // one copy; its own dependencies (`convex`, `vue`, `ohash`) are ESM or already transpiled.
+    const optimizeDeps = ((nuxt.options.vite ??= {}).optimizeDeps ??= {})
+    optimizeDeps.exclude ??= []
+    if (!optimizeDeps.exclude.includes('@lupinum/better-convex-vue'))
+      optimizeDeps.exclude.push('@lupinum/better-convex-vue')
+    // An app's own include would pre-bundle the package again.
+    optimizeDeps.include = optimizeDeps.include?.filter((id) => id !== '@lupinum/better-convex-vue')
 
     // Exactly one browser-runtime entry exists. The auth-disabled entry has no
     // Better Auth imports; the auth-enabled entry constructs the same Vue-owned
