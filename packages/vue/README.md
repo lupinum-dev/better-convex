@@ -11,7 +11,7 @@
 </p>
 
 > [!WARNING]
-> This package is prerelease software. Read the [changelog](https://github.com/lupinum-dev/better-convex/blob/main/CHANGELOG.md) before every upgrade.
+> Read the [changelog](https://github.com/lupinum-dev/better-convex/blob/main/CHANGELOG.md) before every upgrade.
 
 ## Purpose
 
@@ -28,10 +28,8 @@ Use [`@lupinum/better-convex-nuxt`](https://www.npmjs.com/package/@lupinum/bette
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-vue@next convex@^1.42.2 vue@^3.5.0
+pnpm add @lupinum/better-convex-vue convex@^1.42.2 vue@^3.5.0
 ```
-
-The `next` dist-tag is the 1.0 release candidate.
 
 ## Quick start
 

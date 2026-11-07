@@ -17,7 +17,7 @@
 > Better Convex is not related to the unscoped npm package `better-convex` (now kitcn). Our packages are `@lupinum/better-convex-*`, and the command is `better-convex-nuxt`. Do not run `npx better-convex`.
 
 > [!WARNING]
-> These packages are prerelease software. Read the [changelog](CHANGELOG.md) before every upgrade. The authentication component cannot reuse the database of another Better Auth integration. Start it with a fresh component.
+> Read the [changelog](CHANGELOG.md) before every upgrade. The authentication component cannot reuse the database of another Better Auth integration. Start it with a fresh component.
 
 ## Why use Better Convex?
 
@@ -52,10 +52,10 @@ Better Convex does not decide who may read or change data. Check the user, owner
 Add the module to a Nuxt application:
 
 ```bash
-pnpm nuxi module add @lupinum/better-convex-nuxt@next
+pnpm nuxi module add @lupinum/better-convex-nuxt
 ```
 
-This installs the module and `convex`, and adds the module to `nuxt.config.ts`. The `next` dist-tag is the 1.0 release candidate. Upgrading from a beta? See [MIGRATING.md](MIGRATING.md).
+This installs the module and `convex`, and adds the module to `nuxt.config.ts`. Upgrading from a beta? See [MIGRATING.md](MIGRATING.md).
 
 Run Convex and Nuxt with one command. In `package.json`:
 
@@ -166,8 +166,8 @@ documentation. Read the package README and its TypeScript types instead.
 Give your coding agent this task:
 
 ```text
-Add Better Convex to this application. Install @lupinum/better-convex-nuxt@next
-(or @lupinum/better-convex-vue@next for Vue without Nuxt). Set it up for coding
+Add Better Convex to this application. Install @lupinum/better-convex-nuxt
+(or @lupinum/better-convex-vue for Vue without Nuxt). Set it up for coding
 agents as described under "Agent setup" in the package README. Then read
 node_modules/<package>/dist/agent/AGENTS.md and follow its "Start here" table.
 Finish with the "Check your setup" steps of the Installation page.

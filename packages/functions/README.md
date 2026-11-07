@@ -39,7 +39,7 @@ The package imports only `convex`. It works with any frontend.
 ## Installation
 
 ```bash
-pnpm add @lupinum/better-convex-functions@next
+pnpm add @lupinum/better-convex-functions
 ```
 
 ## Quick start
