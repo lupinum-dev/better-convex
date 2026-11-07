@@ -1,5 +1,219 @@
 # @lupinum/better-convex-vue
 
+## 1.0.0
+
+### Minor Changes
+
+- [#260](https://github.com/lupinum-dev/better-convex/pull/260) [`7ade54f`](https://github.com/lupinum-dev/better-convex/commit/7ade54f8cde931056fe983c9d536c7619a91cfd1) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `await` support to `useConvexQuery` and `useConvexPaginatedQuery` in plain Vue
+  
+  A page inside `<Suspense>` now waits for the first result or error of each awaited query.
+  Both packages return the same awaitable state, typed `ConvexQuery` and `ConvexPaginatedQuery`.
+  It is no longer a Promise, so `reactive(useConvexQuery(...))` also works in Nuxt.
+  Migration: rename `NuxtConvexQuery` to `ConvexQuery` and `NuxtConvexPaginatedQuery` to `ConvexPaginatedQuery`. Replace `.catch()` or `.finally()` on a query with `await` and read `error`. A Nuxt query stored inside `reactive()`, `ref()` or a Pinia store now unwraps its refs: read `data` there without `.value`.
+
+- [#304](https://github.com/lupinum-dev/better-convex/pull/304) [`4bfa2d1`](https://github.com/lupinum-dev/better-convex/commit/4bfa2d1cb897fbeedb54bd4a67f7c03f8ddc2c72) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `blockedBy: 'server'` for a query that the server render did not load, so templates can show a skeleton instead of an empty result.
+  
+  With `server: false`, or without a Convex URL or Convex session token on the server, the server render and hydration report `status: 'idle'` with `blockedBy: 'server'`; before, they reported `blockedBy: null`. The value becomes `null` when the browser starts the query.
+  The docs add a "Prefill a form from a query" recipe and show the last value with a notice after a live query error.
+  Migration: an exhaustive `switch` on `blockedBy` (`ConvexQueryBlockedBy`) must handle `'server'`.
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add Nuxt 5 support: the module runs on Nuxt `^4.6.0 || ^5.0.0-0` with one server code path, tested on Nuxt 4.6.1 and the Nuxt 5 nightly (pre-release)
+  
+  Server code uses `nuxt/server` and web `Request`/`Response`. Remove the `h3` dependency: the server helpers take `event: ConvexServerEvent`, which accepts every Nuxt 4.6 and Nuxt 5 server event.
+  `toConvexH3Error` returns, and `getConvexUser` and `requireConvexUser` throw, an HTTP error (`NuxtError`); check it with `isNuxtError` from `nuxt/server` and read `error.status`.
+  Server helpers (`serverConvex`, `getConvexUser`, `requireConvexUser`) read the server's runtime config, not a per-request copy; on Nuxt 4 with per-request env (Cloudflare module workers) set the Convex config at build or boot time.
+  On Nuxt 5, a `routeRules` cache or `headers` rule, or server middleware that sets cache headers, overrides the private cache headers on signed-in pages; the module warns at build about such route rules. Install `@nuxt/devtools` on Nuxt 5 to see the Convex tab.
+  Migration: update Nuxt to 4.6 or newer and Node to `^22.22.3 || ^24.15.0 || >=26`, import `defineEventHandler`/`createError`/`readBody`/`useRuntimeConfig` from `nuxt/server`, read `error.status` (not `statusCode`) on `toConvexH3Error` results, and type helper events as `ConvexServerEvent` or let them infer.
+
+- [#255](https://github.com/lupinum-dev/better-convex/pull/255) [`43237a6`](https://github.com/lupinum-dev/better-convex/commit/43237a6443d3abc81ade8ef6093f6e39e70ae12f) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the auth factory to safe defaults: password sign-in is off unless you pass `emailAndPassword`, and identity gaps are closed
+  
+  Password sign-in needs verified addresses and a password reset ends every earlier session. A password change always ends the other sessions (no opt-out), and verifying an address ends earlier sessions.
+  Users with an unverified email are created only by password sign-up (and anonymous guests): unverified social users are refused. `beforeUserCreate` can no longer swap the email (letter case only, stored lower case).
+  `twoFactor` is rejected with `emailOTP` or `socialProviders`, and `socialProviders.*.overrideUserInfoOnSignIn` is rejected. Email codes are stored hashed, `emailOTP.changeEmail` is rejected, email-code password reset needs `emailAndPassword.passwordReset`, and organization invitations need a verified email.
+  Without an `email` hook, a loopback `SITE_URL` logs mail to the Convex log (dev outbox); with another `SITE_URL` set, `createBetterConvexAuth` fails when mail is needed. With `SITE_URL` unset it loads, and sending mail fails with an error that names the `email` hook.
+  `convex.auth.origin` accepts `process.env.SITE_URL` as is. `init` writes `emailAndPassword: {}`; docs and starters drop the localhost fallback.
+  Migration: pass `emailAndPassword: {}` to keep password sign-in (add `requireEmailVerification: false` to keep sign-in before verification), add an `email` hook before deploying, remove `overrideUserInfoOnSignIn`, drop `twoFactor` from apps with `emailOTP` or social sign-in, and use email codes where access depends on the email.
+
+- [#261](https://github.com/lupinum-dev/better-convex/pull/261) [`1b164ac`](https://github.com/lupinum-dev/better-convex/commit/1b164acacad4ddcc03cbbb9bc9431c9f2a3425b9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `preloadConvexQuery` to load a query's data in a Vue Router guard before the page renders
+  
+  A `useConvexQuery` with the same function, arguments and `auth` then starts with the result instead of `pending`.
+
+### Patch Changes
+
+- [#179](https://github.com/lupinum-dev/better-convex/pull/179) [`5b43a1f`](https://github.com/lupinum-dev/better-convex/commit/5b43a1ffec2337476b1f287a4a8732ea6cb5e342) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the packaged agent documentation (`<package>/agent-docs`): it now starts with a task table and the rules agents most often get wrong, lists pages in navigation order, and its links work inside the package.
+
+- [#300](https://github.com/lupinum-dev/better-convex/pull/300) [`78e1272`](https://github.com/lupinum-dev/better-convex/commit/78e1272e994079386cb8800c289ed1af0ef01149) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix auth failures being handled differently on the server and in the browser, and a setup error being shown as an outage.
+  
+  One rule now applies everywhere: 401 and 403 end the session; no answer, a timeout, 408, 429 and 5xx keep it and retry (`AUTH_UNAVAILABLE`); any other answer, such as a redirect, a 404 or a token without `sub`, is the new setup error `AUTH_MISCONFIGURED`, and the route middleware redirects.
+  A temporary failure during a session-changing call such as `updateUser()` keeps the session and rejects the call with `AUTH_UNAVAILABLE`.
+  A temporary failure of the first session read in the browser now retries on its own with backoff, and a page the server rendered anonymous stays anonymous.
+  `useConvexAuth().error.code` is now set (for example `AUTH_UNAVAILABLE` or `SITE_URL_MISSING`); check the code instead of the message.
+
+- [#185](https://github.com/lupinum-dev/better-convex/pull/185) [`a13f74b`](https://github.com/lupinum-dev/better-convex/commit/a13f74b7ff5d0991800e49dd652bc31a8e3a6021) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix server-rendered query data flashing empty or pending after hydration when auth is enabled.
+  A page the server rendered anonymously now starts as confirmed anonymous, so the browser's first auth check no longer clears its data, and a query that already has a result for its arguments stays `success` while auth confirms. A session found after an anonymous render still clears the data and runs the query as that user.
+
+- [#211](https://github.com/lupinum-dev/better-convex/pull/211) [`17a785a`](https://github.com/lupinum-dev/better-convex/commit/17a785a5826a538208dd836b578cd69632f2de45) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `useConvexAuth()` showing a user as signed in before Convex accepted the token.
+  `status` now changes only after Convex accepts the session, uses `'pending'` instead of `'loading'`, and `pending` follows `status` as in every other composable. A client that keeps failing to start no longer retries in a loop, and a library authentication error keeps its code.
+  
+  Migration: replace `status === 'loading'` with `status === 'pending'`. To disable a button while a sign-in or sign-out runs, keep your own `ref` around the call; `pending` no longer covers it. Plain Vue auth adapters report `'pending'` instead of `'loading'`.
+
+- [#270](https://github.com/lupinum-dev/better-convex/pull/270) [`65e0c48`](https://github.com/lupinum-dev/better-convex/commit/65e0c481964db3c18675c3120017de5733d9ea53) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix signed-in people being shown as signed out when the token exchange fails for a moment
+  
+  A 429, a 5xx, a network error or a timeout from `/api/auth/convex/token` no longer ends in a sign-out: the browser waits and asks again (1 s up to 30 s, with jitter) for at least 30 seconds, and at a scheduled refresh for as long as the current token still works.
+  After that it reports `AUTH_UNAVAILABLE` ("Authentication is temporarily unavailable") instead of "Convex rejected the authentication token".
+  Convex now refreshes Better Auth tokens 60 seconds before they expire, and its 10-second confirmation deadline starts only after a token is fetched.
+  Add the optional `tokenRefreshLeewaySeconds` to `BetterConvexAuthAdapter` for the same choice in a custom adapter.
+
+- [#325](https://github.com/lupinum-dev/better-convex/pull/325) [`6486f8e`](https://github.com/lupinum-dev/better-convex/commit/6486f8eff2e6fa84046cb6c902e346523e76b97e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the Better Auth peers to 1.7.12 (stricter JWT key checks, RFC 6265bis cookies, OAuth client errors, safer password reset)
+  
+  Migration: install `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider` at exactly `1.7.12`.
+  
+  Local auth components: regenerate the schema. `id` is now sortable, and with `oauthProvider()` the `oauthConsent` table gains a `clientId_userId_id` index. Better Auth 1.7.12 looks up OAuth consent by `id`; an old schema makes that lookup fail.
+  
+  A profile that wires `oauthProvider` itself: add `/oauth2/client/rotate-keys` (new in 1.7.12) to `disabledPaths`. Without it, the factory refuses to start with `AUTH_OAUTH_CONFIG_INVALID`.
+  
+  The token endpoint now answers a wrong client secret with `401 invalid_client` before it reads the authorization code, so the code is not spent; it still mints nothing and stays single-use. A wrong PKCE verifier is now `invalid_grant` (RFC 7636), not `invalid_request`.
+  
+  MCP access tokens are now checked with `jose` and the keys from the auth component. Better Auth 1.7.12's own verifier uses a timer, and Convex queries and mutations do not allow timers.
+
+- [#329](https://github.com/lupinum-dev/better-convex/pull/329) [`27e68f7`](https://github.com/lupinum-dev/better-convex/commit/27e68f7f5f02605b14bc89071ea8394940bbdbe5) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the Better Auth peers to 1.7.16, the security release of 2026-11-03
+  
+  Better Auth 1.7.16 fixes 12 advisories, among them revoked sessions that stayed valid with the cookie cache, OAuth sign-in that read a string `email_verified` as verified, and email-change and verification links that worked for another account. See https://better-auth.com/blog/security-release-2026-11-03.
+  
+  Migration: install `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider` at exactly `1.7.16`. With pnpm's 24-hour quarantine, add those exact versions to `minimumReleaseAgeExclude` until 2026-11-05, or install after that date.
+  
+  The module now depends on `@nuxt/kit` 4.6.4 and `jose` 6.2.15, and is tested on Nuxt 4.6.4 (with nitropack 2.13.6, which fixes Nuxt and Nitro advisories).
+
+- [#258](https://github.com/lupinum-dev/better-convex/pull/258) [`996bede`](https://github.com/lupinum-dev/better-convex/commit/996bede786ceff83782bbe016760b887b0810b18) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the Better Auth peers to 1.7.7 (critical Magic Link account-takeover fix)
+  
+  Migration: install `better-auth`, `@better-auth/core` and `@better-auth/oauth-provider` at exactly `1.7.7`.
+
+- [#163](https://github.com/lupinum-dev/better-convex/pull/163) [`9d41154`](https://github.com/lupinum-dev/better-convex/commit/9d41154bb453e507ff2830708ed368531592beef) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `reactive(useConvexQuery(...))` and `reactive()` around every other composable: results are no longer frozen, so `reactive()` unwraps their refs.
+
+- [#325](https://github.com/lupinum-dev/better-convex/pull/325) [`6486f8e`](https://github.com/lupinum-dev/better-convex/commit/6486f8eff2e6fa84046cb6c902e346523e76b97e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the development log "failed with an unclassified error: undefined" when code normalizes an error that is not there
+  
+  `normalizeConvexError(undefined)` and `normalizeConvexError(null)` still return the `unknown` error, but no longer log in development: there is no original error to show.
+
+- [#181](https://github.com/lupinum-dev/better-convex/pull/181) [`0a2e17d`](https://github.com/lupinum-dev/better-convex/commit/0a2e17d37a95c1199bb765bf4638390d56b51598) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix errors without a cause: in development, an error that becomes `Unknown Convex error` is now logged once with its original cause.
+  Production output and the public `ConvexCallError` stay the same.
+
+- [#213](https://github.com/lupinum-dev/better-convex/pull/213) [`5e87683`](https://github.com/lupinum-dev/better-convex/commit/5e87683d5006a6567c4fd0da8584127951dbccee) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `useConvexOperation` to an experimental API: import it from `@lupinum/better-convex-nuxt/experimental` or `@lupinum/better-convex-vue/experimental`.
+  
+  Migration: add `import { useConvexOperation } from '@lupinum/better-convex-nuxt/experimental'`; Nuxt no longer auto-imports it.
+
+- [#256](https://github.com/lupinum-dev/better-convex/pull/256) [`ae71c68`](https://github.com/lupinum-dev/better-convex/commit/ae71c68c86d5a82d6f4c94d35af46362cfc0f25d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the auth transport defaults: server helpers set cache headers themselves, duplicate auth cookies are dropped, and the client IP header and OAuth admin routes are no longer exposed.
+  
+  - `serverConvex(event)` and `getConvexUser(event)` add `Vary: Cookie` and `Cache-Control: private, no-store` when they read the session cookie.
+  - `convex.auth.trustedClientIpHeader` moves from the public to the server-only runtime config (`runtimeConfig.convex.trustedClientIpHeader`).
+  - A production build with a loopback `convex.auth.origin` now logs a warning.
+  - With the OAuth provider, `BCN_AUTH_PROXY_IP_SECRET` must be at least 32 characters whenever it is set, and it is required unless `SITE_URL` is a loopback origin. `NODE_ENV` no longer decides this.
+  - `/oauth2/end-session/confirm` and the `/admin/oauth2` provisioning routes are now listed as disabled over HTTP. The provider only calls them from server code and never routed them, so this is defence in depth, not a behavior change.
+  
+  Migration: read the trusted client IP header from `useRuntimeConfig().convex` on the server if you read it from `public.convex.auth`, and set a `BCN_AUTH_PROXY_IP_SECRET` of at least 32 characters on every non-loopback deployment that uses the OAuth provider.
+
+- [#228](https://github.com/lupinum-dev/better-convex/pull/228) [`4647e8c`](https://github.com/lupinum-dev/better-convex/commit/4647e8c7dc1e8b0d53ba63bce39149df7c8373db) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the test kit to fail when a mutation passes an optimistic update and keep cached query values and errors scoped to their client.
+
+- [#314](https://github.com/lupinum-dev/better-convex/pull/314) [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `better-convex init` leaving `.env.local` readable by other local users after it adds the proxy secret. The file is now mode 600.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `organization.requireEmailVerificationOnInvitation: undefined` turning off the rule that an invitation needs a verified address. Only `false` turns it off.
+
+- [#226](https://github.com/lupinum-dev/better-convex/pull/226) [`18ff1d4`](https://github.com/lupinum-dev/better-convex/commit/18ff1d4583e764224704d1d7c0a8d9b8d630d89b) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add experimental `keepAlive` to keep query subscriptions open for a while after the last component leaves, so going back shows data at once.
+
+- [#311](https://github.com/lupinum-dev/better-convex/pull/311) [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a provider in `account.accountLinking.trustedProviders` linking to a user whose address nobody verified. The link now fails with `AUTH_LINK_UNVERIFIED_EMAIL` until the address is verified.
+
+- [#248](https://github.com/lupinum-dev/better-convex/pull/248) [`bb6188a`](https://github.com/lupinum-dev/better-convex/commit/bb6188a146a2003631b5acfa612242b76517a0a8) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `auth.mcpAuthorization(ctx)`: the MCP door's resource, issuer, scopes and token verifier from the `oauth.mcp` profile in one call.
+  Pass `auth` to `createMcpServer` from `@lupinum/better-convex-agents/mcp`, or spread the result into the `handleMcpRequest` options.
+
+- [#203](https://github.com/lupinum-dev/better-convex/pull/203) [`09f38bd`](https://github.com/lupinum-dev/better-convex/commit/09f38bd1f1883de046b3de8b4ffa25cb33a05fe5) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the MCP Inspector example in "Connect ChatGPT and Claude" and in the packaged agent docs. Inspector requests `offline_access` by default, and the example client now allows it. Before, authorization failed with `invalid_scope`.
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix server-rendered pages that answer 500 "Cannot find module .../convex/dist/esm/index.js" on Nuxt 4.6.0 and 4.6.1
+  
+  The module now adds `convex` to `build.transpile`, so Nitro no longer copies a broken import path into the server bundle. Remove any `nitro.externals` workaround you added for this.
+  `@nuxt/kit` moves to 4.6.1.
+
+- [#305](https://github.com/lupinum-dev/better-convex/pull/305) [`9ea1c89`](https://github.com/lupinum-dev/better-convex/commit/9ea1c890e23427e01a3380ab64d2879bdd357410) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the OAuth operator accepting a query context, and refusing an MCP resource on the IPv6 loopback address `http://[::1]`.
+  
+  `auth.oauthOperator.createPublicClient` and `deleteClient` now take a mutation or action context, like `createHostClient` and `setClientDisabled`. A query context is a type error, and every operator call throws `AUTH_WRITE_REQUIRES_MUTATION_OR_ACTION` at entry when it gets one. Such calls already failed later at runtime.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `/oauth2/public-client-prelogin` showing the name and contacts of any client to a visitor who holds the signed query of another client.
+  
+  Also refuse a `loginPage` or `consentPage` that contains a backslash, and run the authorize, token and revoke checks for a path with a trailing slash too.
+
+- [#214](https://github.com/lupinum-dev/better-convex/pull/214) [`719f58c`](https://github.com/lupinum-dev/better-convex/commit/719f58cfdc6be87884e6f6aa487f46e08caa6926) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix upload and operation arguments being read after the wait for authentication.
+  `upload()` args and context and every `op.query`, `op.mutation` and `op.action` call now copy their arguments when called, with the same rules as `mutate()`. Write state publishes `status` last, a form can no longer be submitted twice from a `pending` watcher, and a form cancelled during validation returns `CANCELLED`.
+
+- [#248](https://github.com/lupinum-dev/better-convex/pull/248) [`bb6188a`](https://github.com/lupinum-dev/better-convex/commit/bb6188a146a2003631b5acfa612242b76517a0a8) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Remove `auth.mcp`: `auth.mcpAuthorization(ctx)` is the one source of the MCP resource, issuer and supported scopes.
+  `auth.oauthOperator.createPublicClient` binds a client to the `oauth.mcp` resource when you leave out `resource`.
+  
+  Migration: spread `auth.mcpAuthorization(ctx)` into the `handleMcpRequest` options instead of `auth.mcp.resource()`, `auth.mcp.issuer()` and `auth.mcp.scopesSupported()`, and drop `resource: { identifier: auth.mcp.resource().href, … }` from `createPublicClient`.
+
+- [#218](https://github.com/lupinum-dev/better-convex/pull/218) [`7e94263`](https://github.com/lupinum-dev/better-convex/commit/7e94263fb6a80d6c10f4773535ad3d3d4463453e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix invalid upload size limits being accepted.
+
+- [#192](https://github.com/lupinum-dev/better-convex/pull/192) [`211fbdc`](https://github.com/lupinum-dev/better-convex/commit/211fbdc80267cfe12c9214672af1530961eb73df) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `useConvexOperation` showing `CANCELLED` as an error after `op.cancel()`. The state now returns to `'idle'`, as it does after `reset()` and a cancelled upload.
+
+- [#221](https://github.com/lupinum-dev/better-convex/pull/221) [`71d983d`](https://github.com/lupinum-dev/better-convex/commit/71d983df4abe75ee55f126d2d4c8ffd14c78d153) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add experimental `insertAtTop` and `optimisticallyUpdateValueInPaginatedQuery` for optimistic updates to paginated lists.
+
+- [#275](https://github.com/lupinum-dev/better-convex/pull/275) [`99cbe1a`](https://github.com/lupinum-dev/better-convex/commit/99cbe1a32fafd8c4bdafa3874980075856e36293) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix rows loaded with `loadMore()` disappearing while a hydrated first page was still being split.
+
+- [#311](https://github.com/lupinum-dev/better-convex/pull/311) [`b705b9c`](https://github.com/lupinum-dev/better-convex/commit/b705b9c256e26447502437910bad61c9d1018df0) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a password reset, an address verification or an OIDC logout failing for a person with more than 128 sessions, which left every session alive.
+
+- [#314](https://github.com/lupinum-dev/better-convex/pull/314) [`4b67269`](https://github.com/lupinum-dev/better-convex/commit/4b67269e121d582dfe2ddcd632c9c1854ee5850e) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `defu` and `ohash` to exact versions, like the other runtime dependencies.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the auth proxy to refuse every Better Auth cookie without `HttpOnly` or with `SameSite=None`, not only the session cookie. A deletion cookie is checked only for `Secure`.
+  
+  The refusal of a query on a fixed metadata route now carries the code `BCN_AUTH_PROXY_METADATA_QUERY_REJECTED`.
+
+- [#163](https://github.com/lupinum-dev/better-convex/pull/163) [`9d41154`](https://github.com/lupinum-dev/better-convex/commit/9d41154bb453e507ff2830708ed368531592beef) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add refs as individual query arguments: `useConvexQuery(api.projects.get, { projectId })` with `projectId` from `toRefs(props)` now type-checks, also in `useConvexPaginatedQuery`.
+
+- [#183](https://github.com/lupinum-dev/better-convex/pull/183) [`8f2a4a2`](https://github.com/lupinum-dev/better-convex/commit/8f2a4a2f33744b04b97e3a1b15c72e98a2355fcd) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a loading flash when a component mounts a query that is already live elsewhere on the page.
+  The query now starts with the result the client already holds, in the same render, instead of showing `pending` for one frame.
+
+- [#186](https://github.com/lupinum-dev/better-convex/pull/186) [`d1a4f20`](https://github.com/lupinum-dev/better-convex/commit/d1a4f20b6bd78798ed0e6d06238b0ca44db972cd) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Remove `refresh()` from `useConvexQuery` and `useConvexPaginatedQuery`; it never re-ran a live query.
+  
+  Migration: Delete `refresh()` calls. Convex re-runs queries when their data changes. Use `loadMore()` to retry a failed later page.
+
+- [#200](https://github.com/lupinum-dev/better-convex/pull/200) [`4cad9d8`](https://github.com/lupinum-dev/better-convex/commit/4cad9d8f58f3582d846d91c41c2316776cf51bda) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the paginated query's `reset()` to `restart()`; it restarts the list.
+  
+  Migration: Rename `reset(` to `restart(` on results of `useConvexPaginatedQuery`.
+
+- [#171](https://github.com/lupinum-dev/better-convex/pull/171) [`d84df98`](https://github.com/lupinum-dev/better-convex/commit/d84df9899bb4a2bfd7a71c09076f43095aa5806c) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix optimistic updates showing values that were never sent when a reactive object is passed to `mutate()`.
+
+- [#184](https://github.com/lupinum-dev/better-convex/pull/184) [`55a90d6`](https://github.com/lupinum-dev/better-convex/commit/55a90d60cea9f3523b00f7593156ba75f102cc13) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `await useConvexQuery()` and `useConvexPaginatedQuery()` on the first load of an `ssr: false` page.
+  The query now starts at once and the await waits for its first result. Before, it returned at once with `status: 'idle'` and no data, because Nuxt reports `isHydrating` on that render too.
+
+- [#269](https://github.com/lupinum-dev/better-convex/pull/269) [`ebfd233`](https://github.com/lupinum-dev/better-convex/commit/ebfd233ecaaf7bae665c148adf718f46bb1c6163) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix server rendering of a paginated first page that Convex marks `SplitRequired`
+  
+  The server splits the page once into two bounded pages and renders their rows instead of a `PAGINATION_SPLIT_REQUIRED` error.
+  When a half still needs a split, the list renders as not fetched and the browser loads it.
+  After hydration the rows stay on screen while the live list splits the page.
+  After hydration, a `loadMore()` issued while the first page splits no longer drifts: if live inserts moved the first page's boundary, the page loaded from the server cursor is dropped when the split finishes, so rows are neither duplicated nor skipped.
+
+- [#191](https://github.com/lupinum-dev/better-convex/pull/191) [`73df34d`](https://github.com/lupinum-dev/better-convex/commit/73df34d74442797b31e85e17e7df62381b0a2a4b) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix a mutation, form submission or operation started before the first auth result failing with `IDENTITY_CHANGED` when that result finds no session. It now waits and runs as the anonymous visitor, and identity-owned state is kept.
+
+- [#312](https://github.com/lupinum-dev/better-convex/pull/312) [`1a96a6a`](https://github.com/lupinum-dev/better-convex/commit/1a96a6a4eba9a68b546635bf06d748ff1f44dd0d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix turning on two-factor leaving the person's other sessions signed in. A session that signed in with a stolen password before then never had to pass the second factor.
+
+- [#194](https://github.com/lupinum-dev/better-convex/pull/194) [`03a4279`](https://github.com/lupinum-dev/better-convex/commit/03a4279c6c51f6861d8f6ca929a0ca3b2f6f22cf) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix the Convex client skipping its proactive token refresh. Two session tokens minted in the same second were identical, and Convex schedules a refresh only after it receives a new token, so the first update after the token expired needed a reconnect. Each token now has a unique `jti`.
+  
+  The client now keeps its first confirmed token until the scheduled refresh (Convex `initialAuthTokenReuse`). Before, it fetched a second token right after connecting, which cost one more token request per page load and re-ran every authenticated query.
+
+- [#182](https://github.com/lupinum-dev/better-convex/pull/182) [`572cc15`](https://github.com/lupinum-dev/better-convex/commit/572cc15a825f67e81bed645d766a3e107a222d35) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `mutate()` and `run()` to accept a ref for each argument, like query arguments.
+  The call reads the ref's value once, when you call it, and sends that value.
+
+- [#257](https://github.com/lupinum-dev/better-convex/pull/257) [`f10f4b2`](https://github.com/lupinum-dev/better-convex/commit/f10f4b2861266df2a65173e4167773f51686c4a9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the dependencies to convex-helpers 0.1.120, ohash 2.0.12 and the MCP SDK 2.3.1
+
+- [#212](https://github.com/lupinum-dev/better-convex/pull/212) [`4e33b64`](https://github.com/lupinum-dev/better-convex/commit/4e33b64edfa7f7c10a05a6b80fe0efc204342c10) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change `upload()` to take one options object: `upload(file, { args, context })`.
+  
+  Migration: replace `upload(file, args, { context })` with `upload(file, { args, context })`, and `upload(file, {}, { context })` with `upload(file, { context })`.
+
+- [#265](https://github.com/lupinum-dev/better-convex/pull/265) [`555e89a`](https://github.com/lupinum-dev/better-convex/commit/555e89ac1ed0f8a669d7e04c8e2b6d6e7fec9296) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add Node.js 26 to the supported Node versions of the Vue package
+  
+  The Vue package now declares `^22.19.0 || ^24.11.0 || >=26.0.0`, so installing the Nuxt package on Node 26 no longer warns, or fails with `engine-strict`, about the Vue package.
+
+- [#337](https://github.com/lupinum-dev/better-convex/pull/337) [`f75decc`](https://github.com/lupinum-dev/better-convex/commit/f75deccfd3484a28b10ecc37a2d118964c48a247) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix every Convex composable failing with "plugin is not installed" in `nuxt dev` when the module comes from npm.
+  
+  Vite loaded two copies of the Vue package in the browser. The module now keeps it out of Vite's dependency pre-bundling.
+  The error now also names a second copy of the package as a possible cause.
+
 ## 1.0.0-rc.10
 
 ### Patch Changes
