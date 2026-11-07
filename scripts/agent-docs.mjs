@@ -57,7 +57,7 @@ const startHere = [
     [
       '/docs/get-started/installation',
       '/docs/get-started/first-realtime-page',
-      '/docs/get-started/add-a-mutation',
+      '/docs/get-started/complete-and-delete',
     ],
   ],
   ['Use Vue without Nuxt', ['/docs/get-started/plain-vue']],

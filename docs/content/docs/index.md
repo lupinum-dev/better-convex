@@ -11,7 +11,7 @@ Follow the quick start in order. Each page builds on the previous one.
 
 1. [Install the module](/docs/get-started/installation)
 2. [Build a live page](/docs/get-started/first-realtime-page)
-3. [Add a mutation](/docs/get-started/add-a-mutation)
+3. [Complete and delete](/docs/get-started/complete-and-delete)
 4. [Add authentication](/docs/get-started/add-authentication)
 5. [Protect data and routes](/docs/get-started/protect-data)
 6. [Next steps](/docs/get-started/next-steps), including MCP and deployment

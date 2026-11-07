@@ -4,7 +4,7 @@
 // runs the packed Vue, Nuxt and MCP consumer apps in a browser. Nothing is fetched from npm
 // for our own packages. Run after `pnpm build`, which also writes the packaged agent docs.
 //
-// `--nuxt5` installs the public starter and the lifecycle consumer on the Nuxt 5 nightly
+// `--nuxt5` installs the tutorial starter and the lifecycle consumer on the Nuxt 5 nightly
 // (test/packed/nuxt5.json) and only type-checks and builds them. The tarballs are still built on
 // Nuxt 4, like a release.
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -71,7 +71,7 @@ try {
   )
 
   const apps = nuxt5
-    ? ['starters/public']
+    ? ['starters/tutorial']
     : ['starters', 'test/fixtures/consumers'].flatMap((folder) =>
         readdirSync(join(root, folder))
           .map((name) => `${folder}/${name}`)

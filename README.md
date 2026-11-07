@@ -13,6 +13,9 @@
   <a href="https://discord.lupinum.com"><img src="https://img.shields.io/badge/Discord-join%20the%20chat-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+> [!NOTE]
+> Better Convex is not related to the unscoped npm package `better-convex` (now kitcn). Our packages are `@lupinum/better-convex-*`, and the command is `better-convex-nuxt`. Do not run `npx better-convex`.
+
 > [!WARNING]
 > These packages are prerelease software. Read the [changelog](CHANGELOG.md) before every upgrade. The authentication component cannot reuse the database of another Better Auth integration. Start it with a fresh component.
 
@@ -46,30 +49,25 @@ Better Convex does not decide who may read or change data. Check the user, owner
 
 ## Installation
 
-Install the module in a Nuxt application:
+Add the module to a Nuxt application:
 
 ```bash
-pnpm add @lupinum/better-convex-nuxt@next convex@^1.42.2
+pnpm nuxi module add @lupinum/better-convex-nuxt@next
 ```
 
-The `next` dist-tag is the 1.0 release candidate. Upgrading from a beta?
-See [MIGRATING.md](MIGRATING.md).
+This installs the module and `convex`, and adds the module to `nuxt.config.ts`. The `next` dist-tag is the 1.0 release candidate. Upgrading from a beta? See [MIGRATING.md](MIGRATING.md).
 
-Add the module to your Nuxt configuration:
+Run Convex and Nuxt with one command. In `package.json`:
 
-```ts [nuxt.config.ts]
-export default defineNuxtConfig({
-  modules: ['@lupinum/better-convex-nuxt'],
-})
+```json [package.json]
+{
+  "scripts": {
+    "dev": "better-convex-nuxt dev"
+  }
+}
 ```
 
-Connect a Convex deployment. This command signs you in to Convex, creates or selects a deployment, writes its URLs to `.env.local`, and creates the `convex/` folder:
-
-```bash
-pnpm exec better-convex-nuxt convex configure
-```
-
-Keep it running while you work on Convex functions. It pushes each change to your development deployment.
+`pnpm dev` then starts a Convex backend on your computer (no account needed), writes its URL to `.env.local`, uploads your Convex functions on every save, and starts Nuxt. To use a deployment in your Convex account instead, run `pnpm exec better-convex-nuxt convex configure` once.
 
 The default Nuxt template shows a welcome screen instead of your pages. Replace `app/app.vue`:
 
@@ -112,15 +110,9 @@ const { data: tasks, status, error } = await useConvexQuery(api.tasks.list)
 </template>
 ```
 
-Start Nuxt in a second terminal:
+Run `pnpm dev`. The server renders the list. After the page loads, the list stays live: when a mutation changes the `tasks` table, every open page updates without a reload.
 
-```bash
-pnpm exec nuxt dev --dotenv .env.local
-```
-
-The server renders the list. After the page loads, the list stays live: add a row to the `tasks` table in the Convex dashboard, and the page updates without a reload.
-
-A query without arguments may omit the arguments object. Pass `'skip'` instead of arguments to pause a query. Follow the [first realtime page](https://better-convex.lupinum.com/docs/get-started/first-realtime-page) guide for the full walkthrough.
+A query without arguments may omit the arguments object. Pass `'skip'` instead of arguments to pause a query. Follow the [tutorial](https://better-convex.lupinum.com/docs/get-started/installation) for the full walkthrough; [`starters/tutorial`](starters/tutorial) is the finished app.
 
 <!-- BEGIN:consumer-onboarding -->
 

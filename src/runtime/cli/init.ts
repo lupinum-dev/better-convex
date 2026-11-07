@@ -229,23 +229,33 @@ function parseArguments(args: readonly string[]): InitArguments {
   return parsed
 }
 
-async function inspectFiles(root: string, typedClient: boolean): Promise<PlannedFile[]> {
+async function inspectFiles(
+  root: string,
+  typedClient: boolean,
+  log: (message: string) => void,
+): Promise<PlannedFile[]> {
   const entries: Record<string, string> = { ...templates }
   if (typedClient) entries[TYPED_CLIENT_PATH] = typedClientTemplate
   const planned: PlannedFile[] = []
   const conflicts: string[] = []
+  let missing = 0
   for (const [relativePath, contents] of Object.entries(entries)) {
     const path = join(root, relativePath)
     const existing = await readOptional(path)
-    if (existing !== undefined && existing !== contents) conflicts.push(relativePath)
+    if (existing === undefined) missing += 1
+    else if (existing !== contents) conflicts.push(relativePath)
     planned.push({ path, contents, exists: existing === contents })
   }
-  if (conflicts.length > 0) {
-    throw new Error(
-      `initializer found conflicting files and wrote nothing: ${conflicts.join(', ')}. Move or merge them manually, then rerun.`,
-    )
+  if (conflicts.length === 0) return planned
+  // Every file exists: an app that was set up before (a starter, or a rerun after editing
+  // convex/auth.ts). Keep its files and continue with the schema check and the secrets.
+  if (missing === 0) {
+    log(`Keeping the existing auth files: ${conflicts.join(', ')}.`)
+    return planned.map((file) => ({ ...file, exists: true }))
   }
-  return planned
+  throw new Error(
+    `initializer found conflicting files and wrote nothing: ${conflicts.join(', ')}. Move or merge them manually, then rerun.`,
+  )
 }
 
 function showPlan(
@@ -429,7 +439,7 @@ async function initialize(
       'initializer found an incomplete generated auth schema and wrote nothing. Remove the incomplete generated file, then rerun.',
     )
   }
-  const files = await inspectFiles(root, parsed.typedClient)
+  const files = await inspectFiles(root, parsed.typedClient, dependencies.log)
   showPlan(root, files, dependencies.log)
   if (files.some((file) => !file.exists)) {
     if (!(await dependencies.confirm('Write these development files?'))) return 0
