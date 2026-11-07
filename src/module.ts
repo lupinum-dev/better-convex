@@ -365,6 +365,8 @@ export default defineNuxtModule<ModuleOptions>({
     optimizeDeps.exclude ??= []
     if (!optimizeDeps.exclude.includes('@lupinum/better-convex-vue'))
       optimizeDeps.exclude.push('@lupinum/better-convex-vue')
+    // An app's own include would pre-bundle the package again.
+    optimizeDeps.include = optimizeDeps.include?.filter((id) => id !== '@lupinum/better-convex-vue')
 
     // Exactly one browser-runtime entry exists. The auth-disabled entry has no
     // Better Auth imports; the auth-enabled entry constructs the same Vue-owned

@@ -283,7 +283,7 @@ export function useBetterConvexRuntime(): BetterConvexVueRuntime {
   const runtime = useOptionalBetterConvexRuntime()
   if (!runtime)
     throw new Error(
-      '[better-convex-vue] plugin is not installed in this Vue app. Install `createBetterConvex()` (in Nuxt: set a Convex URL), and make sure the page loads only one copy of @lupinum/better-convex-vue.',
+      "[better-convex-vue] plugin is not installed in this Vue app. Install `createBetterConvex()` (in Nuxt: set a Convex URL; with `client.connect: 'on-demand'`, use Convex composables only after `useConvexActivation().activate()`), and make sure the page loads only one copy of @lupinum/better-convex-vue.",
     )
   return runtime
 }
