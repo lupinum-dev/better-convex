@@ -21,6 +21,7 @@ setInterval(() => {}, 1000)
 `
 const FAKE_NUXT = `import { existsSync, writeFileSync } from 'node:fs'
 writeFileSync('nuxt-start.json', JSON.stringify({ args: process.argv.slice(2), url: process.env.CONVEX_URL ?? '', site: process.env.SITE_URL ?? '', deployment: process.env.CONVEX_DEPLOYMENT ?? '' }))
+process.exitCode = Number(process.env.FAKE_NUXT_STATUS ?? 0)
 const exitOnceConvexRuns = () => existsSync('convex-start.json') || setTimeout(exitOnceConvexRuns, 10)
 exitOnceConvexRuns()
 `
@@ -47,9 +48,17 @@ describe('better-convex-nuxt dev', () => {
       convex: { args: ['dev'], agentMode: '' },
       site: 'http://localhost:3000',
     },
+    {
+      name: 'returns the status of a Nuxt that fails',
+      envLocal:
+        'CONVEX_DEPLOYMENT=local:local-team-app\nCONVEX_URL=http://127.0.0.1:3210\nFAKE_NUXT_STATUS=1\n',
+      convex: { args: ['dev'], agentMode: '' },
+      site: '',
+      status: 1,
+    },
   ])(
     '$name, then starts Nuxt with the URL',
-    async ({ envLocal, devDependencies, convex, site }) => {
+    async ({ envLocal, devDependencies, convex, site, status = 0 }) => {
       const cwd = mkdtempSync(join(tmpdir(), 'bcn-dev-command-'))
       try {
         mkdirSync(join(cwd, 'node_modules/convex/bin'), { recursive: true })
@@ -64,7 +73,7 @@ describe('better-convex-nuxt dev', () => {
 
         // Nuxt exits on its own here, so dev stops Convex and returns Nuxt's status, not the
         // signal that ended Convex.
-        await expect(runDevCommand(['--port', '3001'], { cwd })).resolves.toBe(0)
+        await expect(runDevCommand(['--port', '3001'], { cwd })).resolves.toBe(status)
 
         const convexStart = JSON.parse(readFileSync(join(cwd, 'convex-start.json'), 'utf8'))
         expect(convexStart).toEqual(convex)
