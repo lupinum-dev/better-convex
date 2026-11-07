@@ -112,15 +112,10 @@ export default createConfigForNuxt({
         ],
       },
     },
-    // Disable multi-word-component-names for Nuxt special files
+    // Disable multi-word-component-names for Nuxt special files. Pages are routes, never used
+    // as components by name.
     {
-      files: [
-        '**/error.vue',
-        '**/layouts/**/*.vue',
-        '**/pages/index.vue',
-        '**/pages/**/index.vue',
-        '**/pages/[[]...slug].vue',
-      ],
+      files: ['**/error.vue', '**/layouts/**/*.vue', '**/pages/**/*.vue'],
       rules: {
         'vue/multi-word-component-names': 'off',
       },
