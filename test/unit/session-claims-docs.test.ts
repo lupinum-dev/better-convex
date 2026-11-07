@@ -38,6 +38,15 @@ const docs = markdownFiles(docsRoot).map((path) => {
   }
 })
 
+// The tutorial builds one app page by page, so a later page may read the claims an earlier one added.
+let tutorialShowsClaims = false
+for (const page of docs
+  .filter(({ path }) => path.startsWith('docs/content/docs/2.get-started/'))
+  .sort((a, b) => a.path.localeCompare(b.path, 'en', { numeric: true }))) {
+  tutorialShowsClaims ||= page.showsSessionClaims
+  page.showsSessionClaims = tutorialShowsClaims
+}
+
 describe('session-token user samples', () => {
   it('finds the documentation pages', () => {
     expect(docs.length).toBeGreaterThan(20)

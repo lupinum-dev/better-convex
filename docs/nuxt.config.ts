@@ -50,6 +50,7 @@ export default defineNuxtConfig({
   },
   routeRules: {
     '/docs/guide/get-started': { redirect: '/docs/get-started/choose-your-path' },
+    '/docs/get-started/add-a-mutation': { redirect: '/docs/get-started/complete-and-delete' },
     '/docs/guide/basics': { redirect: '/docs/get-started/first-realtime-page' },
     '/docs/guide/auth': { redirect: '/docs/get-started/add-authentication' },
     '/docs/guide/concepts': { redirect: '/docs/concepts/mental-model' },

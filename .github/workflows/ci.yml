@@ -133,7 +133,7 @@ jobs:
       - run: pnpm test:starters
 
   # The pinned Nuxt 5 nightly (test/packed/nuxt5.json). First the lifecycle consumer and the
-  # public starter from tarballs built on Nuxt 4, like a release; then the root lane, which
+  # tutorial starter from tarballs built on Nuxt 4, like a release; then the root lane, which
   # rewrites package.json and the lockfile in this throwaway checkout. See test/TESTING.md.
   nuxt5:
     runs-on: ubuntu-24.04

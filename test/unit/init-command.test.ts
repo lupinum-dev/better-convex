@@ -273,6 +273,35 @@ describe.sequential('better-convex-nuxt auth init', () => {
     expect(harness.logs.at(-1)).toBe('Development provisioning complete: signing key.')
   })
 
+  // Catches a rerun that fails after the tutorial's edit of convex/auth.ts, or in a starter
+  // that ships its own auth files.
+  it('keeps edited auth files when every file exists and still provisions', async () => {
+    const harness = createHarness()
+    await runInitCommand([], harness.dependencies)
+    await writeFile(join(root, 'convex/auth.ts'), 'application-owned auth\n')
+    const fresh = createHarness()
+
+    await expect(runInitCommand([], fresh.dependencies)).resolves.toBe(0)
+
+    expect(await read('convex/auth.ts')).toBe('application-owned auth\n')
+    expect(fresh.logs).toContain('Keeping the existing auth files: convex/auth.ts.')
+    expect(fresh.environment.get('SITE_URL')).toBe('http://localhost:4173')
+    expect(fresh.environment.get('BETTER_AUTH_SECRETS')).toBeTruthy()
+    expect(fresh.environment.get('BCN_AUTH_PROXY_IP_SECRET')).toBeTruthy()
+    expect(fresh.convexCalls.some(({ args }) => args[1] === 'auth:ensureSigningKey')).toBe(true)
+  })
+
+  it('adds the typed client to a setup with edited auth files', async () => {
+    const harness = createHarness()
+    await runInitCommand([], harness.dependencies)
+    await writeFile(join(root, 'convex/auth.ts'), 'application-owned auth\n')
+
+    await expect(runInitCommand(['--typed-client'], createHarness().dependencies)).resolves.toBe(0)
+
+    expect(await read('convex/auth.ts')).toBe('application-owned auth\n')
+    expect(await read('app/convex-auth.ts')).toContain('defineConvexAuthClient')
+  })
+
   it('stops before all writes when an existing setup conflicts', async () => {
     await mkdir(join(root, 'convex'), { recursive: true })
     await writeFile(join(root, 'convex/auth.ts'), 'application-owned auth\n')

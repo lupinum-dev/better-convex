@@ -167,7 +167,7 @@ cd - && git worktree remove --force ../better-convex-nuxt5-lane
 ```
 
 - `check-starters.mjs --nuxt5` packs the packages on Nuxt 4, like a release.
-  Then it installs the packed lifecycle consumer and the public starter on the
+  Then it installs the packed lifecycle consumer and the tutorial starter on the
   nightly, and type-checks and builds them.
 - `nuxt5-lane.mjs` changes the root `nuxt`, `@nuxt/kit` and `@nuxt/schema` to
   the nightly aliases and adds overrides. It also allows the
