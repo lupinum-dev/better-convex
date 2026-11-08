@@ -92,9 +92,13 @@ export async function runDevCommand(
     developmentOnly: !anonymous,
   })
   const color = process.stdout.isTTY ? { FORCE_COLOR: '1' } : {}
-  const children: ChildProcess[] = []
+  // Each child with the signal that stops it cleanly. `convex dev` stops its local backend only
+  // on SIGINT (as on Ctrl-C); SIGTERM ends the CLI at once and leaves the backend on its port.
+  const children = new Map<ChildProcess, NodeJS.Signals>()
   const stopAll = () => {
-    for (const child of children) if (child.exitCode === null) child.kill('SIGTERM')
+    for (const [child, signal] of children) {
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal)
+    }
   }
   // Ctrl-C reaches both children through the terminal; wait for them instead of exiting first.
   const onSignal = () => stopAll()
@@ -107,7 +111,7 @@ export async function runDevCommand(
       // Convex may ask a question (for example to log in), so it keeps the terminal's input.
       stdio: ['inherit', 'pipe', 'pipe'],
     })
-    children.push(convexChild)
+    children.set(convexChild, 'SIGINT')
     forward(convexChild.stdout, process.stdout, '[convex]')
     forward(convexChild.stderr, process.stderr, '[convex]')
     const convexExit = exited(convexChild)
@@ -138,7 +142,7 @@ export async function runDevCommand(
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )
-    children.push(nuxtChild)
+    children.set(nuxtChild, 'SIGTERM')
     forward(nuxtChild.stdout, process.stdout, '[nuxt]  ')
     forward(nuxtChild.stderr, process.stderr, '[nuxt]  ')
     const nuxtExit = exited(nuxtChild)
