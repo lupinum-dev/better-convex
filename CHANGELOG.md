@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1
+
+### Patch Changes
+
+- [#346](https://github.com/lupinum-dev/better-convex/pull/346) [`1d3f4db`](https://github.com/lupinum-dev/better-convex/commit/1d3f4db57e57ecd9c0e1ef6203e287f9837b6368) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `better-convex-nuxt dev` exiting with status 1 when Nuxt stops first and dev then stops Convex.
+
+- [#350](https://github.com/lupinum-dev/better-convex/pull/350) [`fc30f6b`](https://github.com/lupinum-dev/better-convex/commit/fc30f6b8735e70dfa7d9e3e799da626f76307d13) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `better-convex-nuxt dev` leaving the local Convex backend running when it stops Convex itself, for example after Nuxt exits. The next `dev` no longer fails with "A local backend is still running".
+- Updated dependencies []:
+  - @lupinum/better-convex-vue@1.0.1
+
 ## 1.0.0
 
 ### Minor Changes
