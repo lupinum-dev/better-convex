@@ -15,8 +15,8 @@ importers:
         specifier: ^0.4.2
         version: 0.4.2(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7)
       '@lupinum/better-convex-nuxt':
-        specifier: 1.0.0-rc.9
-        version: 1.0.0-rc.9(2e7009cdee199f25a395b0209462761b)
+        specifier: 1.0.0
+        version: 1.0.0(2e7009cdee199f25a395b0209462761b)
       better-auth:
         specifier: 1.7.16
         version: 1.7.16(vitest@4.1.12(@edge-runtime/vm@5.0.0)(@types/node@25.9.9)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))(vue@3.5.44(typescript@5.9.3))
@@ -670,8 +670,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lupinum/better-convex-nuxt@1.0.0-rc.9':
-    resolution: {integrity: sha512-Bmh3eUeeODL2jQiDLrfFFLTijS0OQLNLiV+RgmHcLJG5fFy3gX7IRwWPQCA88SYBIMcWRXvSHw+80DFeEdWWNQ==}
+  '@lupinum/better-convex-nuxt@1.0.0':
+    resolution: {integrity: sha512-M1Zai+kaz/xOEo5Xiw4YTqn4DBEMiu9HWVP39XCaKoF1xwuNKrBuQFiHKWugQ8JxLETlM+CM/HnASlIa9LqWag==}
     engines: {node: ^22.22.3 || ^24.15.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -688,8 +688,8 @@ packages:
       better-auth:
         optional: true
 
-  '@lupinum/better-convex-vue@1.0.0-rc.9':
-    resolution: {integrity: sha512-q7YP9bVMIyEmEIfFw59bbexsJSbV7F1fy5/S1Ur9NBtWorpfiydztjD0G9CSCYTzF7bNEetga7mag9UE9+5Rkw==}
+  '@lupinum/better-convex-vue@1.0.0':
+    resolution: {integrity: sha512-o1DG3V91IH4321K5fVApfoe/gK46emMyixTqyyl4Kfx5wF8Q6OF2oQypsoN+XEgWVgrD60ScNhKkWeYXBdO/mg==}
     engines: {node: ^22.19.0 || ^24.11.0 || >=26.0.0}
     peerDependencies:
       convex: '>=1.42.2 <2'
@@ -2636,8 +2636,8 @@ packages:
       encoding:
         optional: true
 
-  node-forge@1.4.0:
-    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+  node-forge@1.4.3:
+    resolution: {integrity: sha512-P6wzfh6t70avmV8FrVEAd/36sOPJQ+hkaJVX1Laap9J/77m7M0eyozDvc8SwnDf4P7MP94gwbAAo0rg3YVXT+g==}
     engines: {node: '>= 6.13.0'}
 
   node-gyp-build@4.8.4:
@@ -2958,8 +2958,8 @@ packages:
     resolution: {integrity: sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==}
     engines: {node: '>= 18'}
 
-  serialize-javascript@7.1.2:
-    resolution: {integrity: sha512-GL2BWwVa6JydKO6l/ljVgjAZF4QJ3S7dWDWi53s5GZT8PJzD2fNxi67HANQGKAqPrwEpL5ba7gUBGi0Ls/sEoQ==}
+  serialize-javascript@7.1.4:
+    resolution: {integrity: sha512-FqlEuoTq/zRmA4Lg6aOqyH3lCHbUtCB0bmHCeFniX2GBdDqMJM3FwdvEhlE5Pim1dlt2FfBdVPmUNNiGhhKqpw==}
     engines: {node: '>=20.0.0'}
 
   seroval@1.7.7:
@@ -4323,9 +4323,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@lupinum/better-convex-nuxt@1.0.0-rc.9(2e7009cdee199f25a395b0209462761b)':
+  '@lupinum/better-convex-nuxt@1.0.0(2e7009cdee199f25a395b0209462761b)':
     dependencies:
-      '@lupinum/better-convex-vue': 1.0.0-rc.9(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))
+      '@lupinum/better-convex-vue': 1.0.0(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))
       '@nuxt/kit': 4.6.4(@nuxt/schema@4.6.4)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.5)(mlly@1.8.2)(rolldown@1.2.16)(unplugin@3.7.0(esbuild@0.28.2)(rolldown@1.2.16)(rollup@4.67.4)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))
       convex: 1.48.0
       convex-helpers: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.48.0)(typescript@5.9.3)(zod@4.6.7)
@@ -4355,7 +4355,7 @@ snapshots:
       - vue
       - zod
 
-  '@lupinum/better-convex-vue@1.0.0-rc.9(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))':
+  '@lupinum/better-convex-vue@1.0.0(convex@1.48.0)(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       '@standard-schema/spec': 1.1.0
       convex: 1.48.0
@@ -4997,7 +4997,7 @@ snapshots:
 
   '@rollup/plugin-terser@1.0.2(rollup@4.67.4)':
     dependencies:
-      serialize-javascript: 7.1.2
+      serialize-javascript: 7.1.4
       smob: 1.6.2
       terser: 5.51.2
     optionalDependencies:
@@ -6234,7 +6234,7 @@ snapshots:
       h3: 1.15.11
       http-shutdown: 1.2.2
       jiti: 2.7.0
-      node-forge: 1.4.0
+      node-forge: 1.4.3
       pathe: 2.0.3
       std-env: 4.3.0
       tinyclip: 0.1.15
@@ -6459,7 +6459,7 @@ snapshots:
     dependencies:
       whatwg-url: 5.0.0
 
-  node-forge@1.4.0: {}
+  node-forge@1.4.3: {}
 
   node-gyp-build@4.8.4: {}
 
@@ -6942,7 +6942,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serialize-javascript@7.1.2: {}
+  serialize-javascript@7.1.4: {}
 
   seroval@1.7.7: {}
 
