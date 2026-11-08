@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,8 +8,10 @@ import { runDevCommand } from '../../src/runtime/cli/dev'
 
 // Stand-ins for the project's Convex and Nuxt CLIs. Convex writes the deployment URL the way
 // `convex dev` does on a first run, with the VITE_ prefix when `vite` is a dependency, and keeps
-// running until a signal ends it; Nuxt records what it was started with and exits once Convex runs.
+// running. Like `convex dev`, it stops its local backend only on SIGINT; SIGTERM ends it without
+// that cleanup. Nuxt records what it was started with and exits once Convex runs.
 const FAKE_CONVEX = `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+process.on('SIGINT', () => { writeFileSync('convex-backend-stopped', ''); process.exit(130) })
 writeFileSync('convex-start.json', JSON.stringify({ args: process.argv.slice(2), agentMode: process.env.CONVEX_AGENT_MODE ?? '' }))
 let local = ''
 try { local = readFileSync('.env.local', 'utf8') } catch {}
@@ -77,6 +79,8 @@ describe('better-convex-nuxt dev', () => {
 
         const convexStart = JSON.parse(readFileSync(join(cwd, 'convex-start.json'), 'utf8'))
         expect(convexStart).toEqual(convex)
+        // A local backend left running blocks its port for the next `dev`.
+        expect(existsSync(join(cwd, 'convex-backend-stopped'))).toBe(true)
         const nuxtStart = JSON.parse(readFileSync(join(cwd, 'nuxt-start.json'), 'utf8'))
         // Nuxt gets the URL and the app's own values, never the deployment selector.
         expect(nuxtStart).toEqual({
