@@ -27,7 +27,7 @@ overrides:
   'ajv@8>fast-uri': 3.1.9
   'express@5>qs': 6.16.1
   'body-parser@2>qs': 6.16.1
-  esbuild: 0.28.1
+  esbuild: 0.28.2
   sharp: 0.35.5
   hono: 4.13.17
   ip-address: 10.7.4
