@@ -81,7 +81,10 @@ E2E and integration suites run against one reviewed Convex local backend
 release, recorded with its archive and binary SHA-256 in
 `test/helpers/local-backend.json`. `ensureLocalBackend()` downloads and verifies
 it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
-never fetches an unreviewed binary. The manifest's `convexVersion` must equal the
+never fetches an unreviewed binary. A new deployment is a second path: the CLI
+would generate its admin key with the newest backend, whatever
+`--local-backend-version` says. `createLocalDeployment()` creates the deployment
+with the reviewed binary first, so the CLI has nothing to download. The manifest's `convexVersion` must equal the
 `convex` dev dependency; bump both together. Pin the backend that
 `https://version.convex.dev/v1/local_backend_version` names for that CLI, which
 is the one `convex dev --local` would install.

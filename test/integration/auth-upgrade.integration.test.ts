@@ -28,7 +28,7 @@ import path from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { ensureLocalBackend } from '../helpers/local-backend.mjs'
+import { createLocalDeployment, ensureLocalBackend } from '../helpers/local-backend.mjs'
 import { availablePort, cleanEnvironment, convexCli, root } from './harness'
 
 const fixture = 'test/fixtures/auth-upgrade'
@@ -125,6 +125,7 @@ describe('auth upgrade from 1.0.0-beta.7', () => {
       cloudPort,
       sitePort: await availablePort(new Set([cloudPort])),
     }
+    await createLocalDeployment(app, { cloud: pin.cloudPort, site: pin.sitePort })
   })
 
   afterAll(() => {
