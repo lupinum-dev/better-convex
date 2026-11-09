@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { isExactLoopbackHost } from '../../src/runtime/shared/auth-origin'
-import { ensureLocalBackend } from './local-backend.mjs'
+import { createLocalDeployment, ensureLocalBackend } from './local-backend.mjs'
 
 interface LocalConvexHandle {
   authOrigin: string
@@ -994,6 +994,7 @@ export async function startLocalConvexBackend(options: {
   else {
     const cloudPort = options.ports?.cloud ?? (await availableLocalPort())
     const sitePort = options.ports?.site ?? (await availableLocalPort(cloudPort))
+    await createLocalDeployment(cwd, { cloud: cloudPort, site: sitePort })
     devArguments.push(
       '--local-cloud-port',
       String(cloudPort),

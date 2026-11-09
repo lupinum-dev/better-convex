@@ -3,11 +3,12 @@
 // `convex dev --local-backend-version <v>` would download any binary it is
 // given. Tests install the reviewed release themselves first, checking the
 // archive and binary SHA-256 from local-backend.json, so the CLI only ever
-// finds the reviewed binary in its cache.
+// finds the reviewed binary in its cache. `createLocalDeployment` keeps the CLI
+// from fetching the newest backend for a new deployment's keys.
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, readFileSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
+import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable, Transform } from 'node:stream'
@@ -140,4 +141,47 @@ export function ensureLocalBackend() {
     pending = undefined
   })
   return pending
+}
+
+/**
+ * Give a project that has no local deployment yet one on the reviewed backend.
+ *
+ * For a new anonymous deployment, `convex dev` 1.48 generates the admin key with
+ * the newest backend, which it downloads from GitHub whatever
+ * `--local-backend-version` says (`generateLocalDevSecretsWithLatestBinary`).
+ * That runs an unreviewed binary, and the start fails whenever the download does.
+ * The CLI keeps the key of a deployment that already exists, so creating it here
+ * with the reviewed binary leaves the CLI nothing to download.
+ */
+export async function createLocalDeployment(projectDir, ports) {
+  const stateDir = path.join(projectDir, '.convex', 'local', 'default')
+  if (existsSync(path.join(stateDir, 'config.json'))) return
+  const backend = await ensureLocalBackend()
+  // The name `convex dev` gives a new deployment under CONVEX_AGENT_MODE=anonymous.
+  const deploymentName = 'anonymous-agent'
+  const instanceSecret = randomBytes(32).toString('hex')
+  const keygen = spawnSync(
+    backend.filename,
+    ['keygen', 'admin-key', '--instance-name', deploymentName, '--instance-secret', instanceSecret],
+    { encoding: 'utf8', timeout: 30_000 },
+  )
+  if (keygen.status !== 0) {
+    fail(`admin key generation failed: ${keygen.stderr || keygen.error || keygen.signal}`)
+  }
+  await mkdir(stateDir, { recursive: true })
+  // The file holds the admin key. Write it whole, or not at all: a partial file
+  // would make the next start skip this step and let the CLI download again.
+  const partial = path.join(stateDir, `config.json.${process.pid}.tmp`)
+  await writeFile(
+    partial,
+    JSON.stringify({
+      ports,
+      backendVersion: backend.version,
+      adminKey: keygen.stdout.trim(),
+      instanceSecret,
+      deploymentName,
+    }),
+    { mode: 0o600 },
+  )
+  await rename(partial, path.join(stateDir, 'config.json'))
 }
