@@ -163,12 +163,17 @@ export async function createLocalDeployment(projectDir, ports) {
   const keygen = spawnSync(
     backend.filename,
     ['keygen', 'admin-key', '--instance-name', deploymentName, '--instance-secret', instanceSecret],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: 30_000 },
   )
-  if (keygen.status !== 0) fail(`admin key generation failed: ${keygen.stderr || keygen.error}`)
+  if (keygen.status !== 0) {
+    fail(`admin key generation failed: ${keygen.stderr || keygen.error || keygen.signal}`)
+  }
   await mkdir(stateDir, { recursive: true })
+  // The file holds the admin key. Write it whole, or not at all: a partial file
+  // would make the next start skip this step and let the CLI download again.
+  const partial = path.join(stateDir, `config.json.${process.pid}.tmp`)
   await writeFile(
-    path.join(stateDir, 'config.json'),
+    partial,
     JSON.stringify({
       ports,
       backendVersion: backend.version,
@@ -176,5 +181,7 @@ export async function createLocalDeployment(projectDir, ports) {
       instanceSecret,
       deploymentName,
     }),
+    { mode: 0o600 },
   )
+  await rename(partial, path.join(stateDir, 'config.json'))
 }
