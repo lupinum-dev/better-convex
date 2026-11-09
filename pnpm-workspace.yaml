@@ -25,7 +25,7 @@ overrides:
   # retain vulnerable lockfile selections. Remove when a clean resolution
   # selects svgo >=4.1.0 and hono >=4.13.5 without overrides.
   svgo: 4.1.0
-  hono: 4.13.11
+  hono: 4.13.17
 
 # Only these dependencies may run install scripts.
 allowBuilds:
