@@ -62,6 +62,8 @@ interface TestNuxt {
     srcDir: string
     buildDir: string
     dev: boolean
+    /** True while `nuxt prepare` or `nuxt typecheck` only writes types. */
+    _prepare?: boolean
     alias: Record<string, string>
     build: { transpile: string[] }
     runtimeConfig: { public: Record<string, unknown>; convex?: Record<string, unknown> }
@@ -102,8 +104,10 @@ async function setup(
   publicRuntimeConfig: Record<string, unknown> = {},
   dev = false,
   routeRules: Record<string, unknown> = {},
+  prepare = false,
 ): Promise<TestNuxt> {
   const nuxt = createNuxt(dev)
+  nuxt.options._prepare = prepare
   Object.assign(nuxt.options.runtimeConfig.public, publicRuntimeConfig)
   Object.assign(nuxt.options.routeRules, routeRules)
   const definition = convexModule as unknown as {
@@ -200,6 +204,31 @@ describe('module trusted client IP header', () => {
     expect(() =>
       normalizeConvexRuntimeConfig({ auth: { origin: 'https://app.example.test' } }, {}),
     ).toThrow('trustedClientIpHeader is required')
+  })
+})
+
+describe('module auth origin', () => {
+  const missingOriginWarning = () =>
+    kit.warn.mock.calls.some(([message]) => String(message).includes('Types are generated'))
+
+  // A build that took the type-generation path would ship the placeholder origin.
+  it.each([
+    ['nuxt build', false],
+    ['nuxt dev', true],
+  ])('requires the origin for %s', async (_, dev) => {
+    await expect(setup({ auth: { origin: undefined } }, {}, dev)).rejects.toThrow(
+      'auth.origin is missing',
+    )
+  })
+
+  it('warns about a missing origin while nuxt prepare writes types, and only then', async () => {
+    kit.warn.mockClear()
+    await setup({ auth: { origin: undefined } }, {}, false, {}, true)
+    expect(missingOriginWarning()).toBe(true)
+
+    kit.warn.mockClear()
+    await setup({ auth: { origin: 'http://localhost:3000' } }, {}, false, {}, true)
+    expect(missingOriginWarning()).toBe(false)
   })
 })
 

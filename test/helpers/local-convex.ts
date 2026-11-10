@@ -986,6 +986,19 @@ export async function startLocalConvexBackend(options: {
   const savedSelection = hasSavedSelection
     ? requireLocalConvexSelection(cwd, configured)
     : undefined
+  if (savedSelection?.deployment.startsWith('anonymous:')) {
+    // `.env.local` outlives a removed `.convex`. The CLI would then create the deployment
+    // again, with the newest backend. Create it here, on the saved name and ports.
+    const cloud = localPortFromUrl(savedSelection.url)
+    const site = localPortFromUrl(savedSelection.siteUrl)
+    if (cloud !== null && site !== null) {
+      await createLocalDeployment(
+        cwd,
+        { cloud, site },
+        savedSelection.deployment.slice('anonymous:'.length),
+      )
+    }
+  }
   let selectionEnv = savedSelection
     ? await createLocalConvexSelectionEnv(savedSelection.deployment)
     : undefined
