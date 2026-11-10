@@ -34,6 +34,17 @@ describe('auth config normalization', () => {
     expect(isConvexAuthEnabled(auth)).toBe(true)
   })
 
+  it('lets type generation run without an origin, and only type generation', () => {
+    // `postinstall: nuxt prepare` runs without .env.local, so SITE_URL is unset there.
+    const auth = normalizeConvexAuthConfig({ origin: undefined }, { typesOnly: true })
+    if (auth === false) throw new Error('expected auth enabled')
+    expect(auth.origin).toBe('http://localhost:3000')
+    // A wrong origin still fails type generation; only a missing one is replaced.
+    expect(() =>
+      normalizeConvexAuthConfig({ origin: 'https://app.example.test/path' }, { typesOnly: true }),
+    ).toThrow('auth.origin')
+  })
+
   it('turns SSR session resolution off and rejects a non-boolean ssr', () => {
     const auth = normalizeConvexAuthConfig({ origin: 'http://localhost:3000', ssr: false })
     if (auth === false) throw new Error('expected auth enabled')

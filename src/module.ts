@@ -292,7 +292,13 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Single build-time auth resolution: one discriminated value drives every
     // plugin/handler/middleware registration decision (architecture invariant).
-    const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth)
+    const typesOnly = Boolean(nuxt.options._prepare)
+    const normalizedAuthConfig = normalizeConvexAuthConfig(options.auth, { typesOnly })
+    if (typesOnly && options.auth && !options.auth.origin) {
+      logger.warn(
+        'auth.origin is missing. Types are generated, but `nuxt dev` and `nuxt build` need it: set SITE_URL in the environment or pass the public origin.',
+      )
+    }
     const isAuthEnabled = isConvexAuthEnabled(normalizedAuthConfig)
     if (isConvexAuthEnabled(normalizedAuthConfig)) {
       // `nuxi prepare` and `nuxt typecheck` build nothing that serves visitors.
