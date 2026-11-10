@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+### Patch Changes
+
+- [#354](https://github.com/lupinum-dev/better-convex/pull/354) [`350aa36`](https://github.com/lupinum-dev/better-convex/commit/350aa365796c03ef80e3bd651317b63244652d79) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix `nuxt prepare` and `nuxt typecheck` failing with "auth.origin is missing" when `SITE_URL` is not set, for example in a `postinstall` script on a fresh clone. They now warn and generate types; `nuxt dev` and `nuxt build` still require the origin.
+- Updated dependencies []:
+  - @lupinum/better-convex-vue@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes
