@@ -104,6 +104,9 @@ function normalizeLocalPath(input: unknown, fallback: string, name: string): str
   return path
 }
 
+/** Stands in for a missing origin while only types are generated. Never served. */
+export const TYPES_ONLY_AUTH_ORIGIN = 'http://localhost:3000'
+
 /**
  * Normalize the build grammar. Omission is a genuine Convex-only build; an
  * object opts into auth and must name its one exact public application origin.
@@ -115,7 +118,18 @@ export function normalizeConvexAuthConfig(
    * The browser has no server-only runtime config, so it cannot enforce the
    * trusted client IP header requirement. Build and server code always do.
    */
-  { requireTrustedClientIpHeader = true }: { requireTrustedClientIpHeader?: boolean } = {},
+  {
+    requireTrustedClientIpHeader = true,
+    typesOnly = false,
+  }: {
+    requireTrustedClientIpHeader?: boolean
+    /**
+     * `nuxi prepare` (the usual `postinstall`) and `nuxt typecheck` only write
+     * types. They run without `.env.local`, so a missing origin must not fail
+     * them. A placeholder origin stands in; dev and build still require one.
+     */
+    typesOnly?: boolean
+  } = {},
 ): NormalizedConvexAuthConfig {
   if (input === undefined || input === false) return false
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -123,6 +137,12 @@ export function normalizeConvexAuthConfig(
   }
 
   const options = input as Partial<ConvexAuthOptions>
+  if (typesOnly && (options.origin === undefined || options.origin === '')) {
+    return normalizeConvexAuthConfig(
+      { ...options, origin: TYPES_ONLY_AUTH_ORIGIN },
+      { requireTrustedClientIpHeader },
+    )
+  }
   if (typeof options.origin !== 'string' || options.origin === '') {
     throw new TypeError(
       'auth.origin is missing. Set SITE_URL (for example SITE_URL=http://localhost:3000 in .env.local) or pass the public origin.',
