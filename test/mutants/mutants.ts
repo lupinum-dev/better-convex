@@ -4902,6 +4902,20 @@ export const mutants: Mutant[] = [
     ],
     projects: ['convex'],
   },
+  // Only type generation runs without the auth origin. A build on that path would ship the
+  // placeholder origin, which is loopback and so needs no trusted client IP header.
+  {
+    id: 'auth-origin-types-only',
+    guards: 'auth-origin',
+    file: 'src/module.ts',
+    find: 'const typesOnly = Boolean(nuxt.options._prepare)',
+    replace: 'const typesOnly = true',
+    kills: [
+      'test/unit/module-setup.test.ts > module auth origin > requires the origin for nuxt build',
+      'test/unit/module-setup.test.ts > module auth origin > requires the origin for nuxt dev',
+    ],
+    projects: ['unit'],
+  },
 ]
 
 export const equivalents: Equivalent[] = [

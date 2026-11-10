@@ -84,7 +84,9 @@ it on first use into `~/.cache/convex/binaries/<version>`, so the Convex CLI
 never fetches an unreviewed binary. A new deployment is a second path: the CLI
 would generate its admin key with the newest backend, whatever
 `--local-backend-version` says. `createLocalDeployment()` creates the deployment
-with the reviewed binary first, so the CLI has nothing to download. The manifest's `convexVersion` must equal the
+with the reviewed binary first, so the CLI has nothing to download. This includes
+a project whose `.env.local` still selects a deployment after `.convex` was
+removed. The manifest's `convexVersion` must equal the
 `convex` dev dependency; bump both together. Pin the backend that
 `https://version.convex.dev/v1/local_backend_version` names for that CLI, which
 is the one `convex dev --local` would install.
@@ -128,6 +130,8 @@ functions from `test/fixtures/mcp-oauth-agent/evidence.ts`.
 - `auth-upgrade`: 1.0.0-beta.7 auth data upgrades to 1.0 through a normal
   `convex dev` push; a control push with a required `bcnConsentId` must fail.
   Set `BCN_AUTH_UPGRADE_KEEP=1` to keep the temporary deployment.
+- `saved-selection`: a project with a deployment in `.env.local` and no
+  `.convex` starts on a deployment that the harness creates.
 
 The MFA proof is `test/e2e/extended/auth-two-factor.e2e.test.ts` (run with `--full`).
 
@@ -136,8 +140,11 @@ The MFA proof is `test/e2e/extended/auth-two-factor.e2e.test.ts` (run with `--fu
 `pnpm test:e2e` starts the pinned backend itself (`CONVEX_E2E_AUTO_START=true`),
 configures the E2E-only auth values, and stops only the backend it started.
 
-To run the backend yourself, keep `convex dev` running in `playground` with the
-pinned version, then configure it and run with auto-start off:
+To run the backend yourself, run `pnpm test:e2e` once first. It creates the
+`playground` deployment with the pinned backend. A `convex dev` that creates the
+deployment itself generates its keys with the newest backend. Then keep
+`convex dev` running in `playground` with the pinned version, configure it, and
+run with auto-start off:
 
 ```bash
 cd playground

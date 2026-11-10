@@ -152,13 +152,15 @@ export function ensureLocalBackend() {
  * That runs an unreviewed binary, and the start fails whenever the download does.
  * The CLI keeps the key of a deployment that already exists, so creating it here
  * with the reviewed binary leaves the CLI nothing to download.
+ *
+ * The default name is the one `convex dev` gives a new deployment under
+ * CONVEX_AGENT_MODE=anonymous. A project whose `.env.local` already selects a
+ * deployment passes that name.
  */
-export async function createLocalDeployment(projectDir, ports) {
+export async function createLocalDeployment(projectDir, ports, deploymentName = 'anonymous-agent') {
   const stateDir = path.join(projectDir, '.convex', 'local', 'default')
   if (existsSync(path.join(stateDir, 'config.json'))) return
   const backend = await ensureLocalBackend()
-  // The name `convex dev` gives a new deployment under CONVEX_AGENT_MODE=anonymous.
-  const deploymentName = 'anonymous-agent'
   const instanceSecret = randomBytes(32).toString('hex')
   const keygen = spawnSync(
     backend.filename,
