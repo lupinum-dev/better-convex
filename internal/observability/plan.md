@@ -46,7 +46,7 @@ Worktree: `better-convex-worktrees/observability`. Base: `origin/main` at `bf9c1
 
 1. `obs/errors`: why/fix and request ID. **PR #361, open.**
 2. `obs/event`: the call event and `ctx.log.set`. **Built 2026-11-11; PR open.**
-3. `obs/trace`: a trace through nested and scheduled operations.
+3. `obs/trace`: a trace through nested and scheduled operations. **Built 2026-11-11; D76.**
 4. `obs/docs`: an operations page for log streams, with a PostHog recipe.
 
 Release after the whole stack merges: functions/agents 0.2.0, vue/nuxt 1.1.0.
@@ -92,7 +92,7 @@ handler: (ctx) => { ctx.log.set({ document: { id } }) }
 ```
 
 As built: absent fields are left out (no `null`s); `code` only on an error; `written` only on a call
-that succeeded (a failed call keeps no writes); `trace` waits for layer 3. A job writes
+that succeeded (a failed call keeps no writes); `trace` only on a call in a chain (layer 3). A job writes
 `action: "job.<name>"`; an internal action writes no `action` and only the actor's `kind` (its
 `ctx.run` calls write full events). `ctx.log.set` exists without `observe` and does nothing.
 
@@ -101,8 +101,9 @@ that succeeded (a failed call keeps no writes); `trace` waits for layer 3. A job
 - Duration, path, usage and request ID come from Convex's own event with the same `request_id`.
 - IDs and codes only. No arguments, no values, no messages.
 
-Layer 3: the outermost call makes a `trace` ID; the library hands it on with the actor (`actingAs`,
-an optional field, so jobs scheduled before the deploy still validate).
+Layer 3 as built (D76): a call makes a `trace` ID when it first hands work on; the library passes it
+as an optional `trace` field next to `actingAs` and `spent` (not inside `actingAs`, which is
+identity), so jobs scheduled before the deploy still validate.
 
 ## Checks for "looks and reads right"
 
@@ -202,7 +203,7 @@ Findings:
   d8597bd): each event sits in the same `convex logs --jsonl` record as Convex's own event, under one
   request ID, and the crash's `Referenz` in the UI is that ID.
 
-- Round 3 answered (see results above). Next: layer 3, a trace ID through scheduled work.
+- Round 3 answered (see results above). Layer 3 built; check it on Luis dev (a click that schedules work, then one `trace` search in PostHog).
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
