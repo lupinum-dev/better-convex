@@ -177,8 +177,11 @@ const needsApproval = v.object({
   url: v.string(),
 })
 
+/** What an agent sees of a failure; `why` and `fix` only come from the app's `fail(…, { why, fix })`. */
+export type ToolFailure = { code: string; message: string; why?: string; fix?: string }
+
 /** Turns any failure into what an agent may see: a coded failure, a known platform error, or nothing internal. */
-export function toolFailure(error: unknown): { code: string; message: string } {
+export function toolFailure(error: unknown): ToolFailure {
   const coded = failureOf(error)
   if (coded) return coded
   const message = error instanceof Error ? error.message : String(error)

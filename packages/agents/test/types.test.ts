@@ -138,10 +138,10 @@ test.concurrent(
     expect(
       errors.map((error) => error.match(/^(\S+): error TS\d+: Property '(\w+)'/)?.slice(1)),
     ).toEqual([
-      ['door/projects.ts(30,18)', 'patch'],
-      ['door/projects.ts(31,15)', 'runMutation'],
-      ['door/projects.ts(32,15)', 'scheduler'],
-      ['door/projects.ts(33,15)', 'runQuery'],
+      ['door/projects.ts(34,18)', 'patch'],
+      ['door/projects.ts(35,15)', 'runMutation'],
+      ['door/projects.ts(36,15)', 'scheduler'],
+      ['door/projects.ts(37,15)', 'runQuery'],
     ])
   },
 )

@@ -129,6 +129,9 @@ const SERIALIZED_KEYS: ReadonlySet<string> = new Set([
   'functionName',
   'outcome',
   'phase',
+  'why',
+  'fix',
+  'requestId',
 ])
 const CONVEX_APPLICATION_ERROR_MESSAGE = 'Convex application error'
 const UNKNOWN_CONVEX_ERROR_MESSAGE = 'Unknown Convex error'
@@ -145,6 +148,12 @@ export interface ConvexCallErrorInput {
   outcome?: ConvexCallOutcome
   /** Set only by `useConvexFileUpload`. See {@link ConvexUploadPhase}. */
   phase?: ConvexUploadPhase
+  /** Why the server refused, as the application wrote it (`data.why`). */
+  why?: string
+  /** What the user can do about it, as the application wrote it (`data.fix`). */
+  fix?: string
+  /** The Convex request ID of the failed call. See {@link ConvexCallError.requestId}. */
+  requestId?: string
 }
 
 /**
@@ -170,6 +179,21 @@ export class ConvexCallError extends Error {
   readonly outcome?: ConvexCallOutcome
   /** The `useConvexFileUpload` phase that failed. */
   readonly phase?: ConvexUploadPhase
+  /**
+   * Why the server refused, written for the user by the application
+   * (`fail(code, message, { why, fix })` in `@lupinum/better-convex-functions`,
+   * or `data.why` of any `ConvexError`).
+   */
+  readonly why?: string
+  /** What the user can do about it (`data.fix`). */
+  readonly fix?: string
+  /**
+   * The Convex request ID of the failed call. Convex logs and log streams
+   * record the same ID, so a user can quote it and you can find the call.
+   * Read from the `[Request ID: …]` part of Convex's error text; nothing
+   * else of that text is kept.
+   */
+  readonly requestId?: string
 
   constructor(input: ConvexCallErrorInput) {
     super(input.message)
@@ -181,6 +205,9 @@ export class ConvexCallError extends Error {
     this.functionName = input.functionName
     this.outcome = input.outcome
     this.phase = input.phase
+    this.why = input.why
+    this.fix = input.fix
+    this.requestId = input.requestId
   }
 
   /** The public serialized shape. There is no `cause` to serialize. */
@@ -195,6 +222,9 @@ export class ConvexCallError extends Error {
       functionName: this.functionName,
       outcome: this.outcome,
       phase: this.phase,
+      why: this.why,
+      fix: this.fix,
+      requestId: this.requestId,
     }
   }
 }
@@ -283,6 +313,9 @@ export interface SerializedConvexCallError {
   functionName?: string
   outcome?: ConvexCallOutcome
   phase?: ConvexUploadPhase
+  why?: string
+  fix?: string
+  requestId?: string
 }
 
 function isRecordLike(value: unknown): value is Record<string, unknown> {
@@ -332,6 +365,9 @@ function readSerialized(value: unknown): SerializedConvexCallError | undefined {
       functionName: value.functionName,
       outcome: value.outcome,
       phase: value.phase,
+      why: value.why,
+      fix: value.fix,
+      requestId: value.requestId,
     }
     if (snapshot.name !== 'ConvexCallError') return undefined
     if (!isConvexCallErrorKind(snapshot.kind)) return undefined
@@ -360,6 +396,10 @@ function readSerialized(value: unknown): SerializedConvexCallError | undefined {
     ) {
       return undefined
     }
+    for (const text of [snapshot.why, snapshot.fix]) {
+      if (text !== undefined && asNonEmptyString(text) === undefined) return undefined
+    }
+    if (snapshot.requestId !== undefined && !isRequestId(snapshot.requestId)) return undefined
     return snapshot as SerializedConvexCallError
   } catch {
     return undefined
@@ -390,6 +430,24 @@ function readCode(error: unknown, data: unknown): string | undefined {
 /** A numeric status, preferring the structured `data.status`. */
 function readStatus(error: unknown, data: unknown): number | undefined {
   return asFiniteNumber(readField(data, 'status')) ?? asFiniteNumber(readField(error, 'status'))
+}
+
+/** Convex request IDs are hexadecimal; anything else is not kept. */
+const REQUEST_ID = /^[0-9a-f]{8,64}$/
+
+function isRequestId(value: unknown): value is string {
+  return typeof value === 'string' && REQUEST_ID.test(value)
+}
+
+/**
+ * The request ID from Convex's error text (`[CONVEX M(fn)] [Request ID: …] Server Error`).
+ * The text is not a Convex contract, so a missing or changed format gives `undefined`.
+ */
+function readRequestId(error: unknown): string | undefined {
+  const message = readField(error, 'message')
+  if (typeof message !== 'string') return undefined
+  const id = /\[Request ID: ([0-9a-f]+)\]/.exec(message)?.[1]
+  return isRequestId(id) ? id : undefined
 }
 
 /**
@@ -424,6 +482,9 @@ function fieldsOf(error: ConvexCallError): ConvexCallErrorInput {
     functionName: error.functionName,
     outcome: error.outcome,
     phase: error.phase,
+    why: error.why,
+    fix: error.fix,
+    requestId: error.requestId,
   }
 }
 
@@ -437,6 +498,9 @@ function revive(serialized: SerializedConvexCallError, functionName: string | un
     functionName: serialized.functionName ?? functionName,
     outcome: serialized.outcome,
     phase: serialized.phase,
+    why: serialized.why,
+    fix: serialized.fix,
+    requestId: serialized.requestId,
   })
 }
 
@@ -449,7 +513,8 @@ function revive(serialized: SerializedConvexCallError, functionName: string | un
  *   a copy that carries it is returned.
  * - A Convex application error becomes `server`. `data` is kept verbatim and
  *   `message` is the developer-authored text (a string `data`, else
- *   `data.message`), else a fixed generic message.
+ *   `data.message`), else a fixed generic message. `why` and `fix` are
+ *   `data.why` and `data.fix`.
  * - A serialized `ConvexCallError` is revived when it is the value itself, its
  *   `.data` (an H3 error or H3 JSON body), or its `.data.data` (an ofetch
  *   `FetchError` of an H3 error). Each candidate must pass
@@ -457,6 +522,8 @@ function revive(serialized: SerializedConvexCallError, functionName: string | un
  * - Everything else becomes `unknown` with a fixed message. A `TypeError` is
  *   never guessed to be `transport`; library HTTP boundaries construct
  *   `transport` errors themselves.
+ * - A `server` or `unknown` error keeps the Convex request ID when Convex's
+ *   error text names one. The text never decides the kind.
  */
 export function normalizeConvexError(
   error: unknown,
@@ -473,6 +540,9 @@ export function normalizeConvexError(
       status: readStatus(error, data),
       data,
       functionName,
+      why: asNonEmptyString(readField(data, 'why')),
+      fix: asNonEmptyString(readField(data, 'fix')),
+      requestId: readRequestId(error),
     })
   }
   const outerData = readField(error, 'data')
@@ -486,6 +556,8 @@ export function normalizeConvexError(
     kind: 'unknown',
     message: UNKNOWN_CONVEX_ERROR_MESSAGE,
     functionName,
+    // An unexpected server failure: its text stays hidden, its request ID finds it in the logs.
+    requestId: readRequestId(error),
   })
 }
 
@@ -532,8 +604,9 @@ function logUnknownCauseInDevelopment(error: unknown, functionName: string | und
 /**
  * Strict validation of the serialized public shape. It gates every revival:
  * the value must be a plain object with only the public keys, a known `kind`,
- * a string `message`, and, when present, a non-empty string `code` and
- * `functionName`, a finite `status`, a known `outcome`, and a known `phase`.
+ * a string `message`, and, when present, a non-empty string `code`,
+ * `functionName`, `why` and `fix`, a finite `status`, a known `outcome`, a
+ * known `phase`, and a hexadecimal `requestId`.
  * A `name: 'ConvexCallError'` alone is never enough.
  */
 export function isSerializedConvexCallError(value: unknown): value is SerializedConvexCallError {

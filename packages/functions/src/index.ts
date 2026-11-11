@@ -39,5 +39,12 @@ export { libraryTables, docValidator } from './schema'
 export { trusted } from './guard'
 export { eraseUser } from './erasure'
 export { claimUpload, type ClaimedUpload, type UploadType } from './uploads'
-export { fail, type ErrorCode, type Actor, type Visitor, type SystemActor } from './actor'
+export {
+  fail,
+  type ErrorCode,
+  type FailureHelp,
+  type Actor,
+  type Visitor,
+  type SystemActor,
+} from './actor'
 export { oneLine } from './values'
