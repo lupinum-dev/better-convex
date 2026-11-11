@@ -75,7 +75,12 @@ handler: (ctx) => { ctx.log.set({ document: { id } }) }
   "type": "better-convex.call",
   "action": "documents.send",
   "kind": "mutation",
-  "actor": { "key": "person:…", "kind": "person", "door": "web", "userId": "…" },
+  "actor": {
+    "key": "person:…",
+    "kind": "person",
+    "door": "web",
+    "userId": "…"
+  },
   "tenant": "…",
   "outcome": "ok",
   "code": null,
@@ -118,11 +123,45 @@ Six scenarios, run in a consumer app every round, in the same order:
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | 0     | Contract                                                                                                                                                                   | Done; layer 2 part not reviewed yet                                           |
 | 1     | Layer 1 PR                                                                                                                                                                 | Done: #361, `pnpm verify` green locally (audit not run, no dependency change) |
-| 2     | Luis: upgrade from rc to 1.0.x/0.1.x in its own PR, then install #361's build (pinned by commit) on one branch; add why/fix to the failures a user can act on; screenshots | Next                                                                          |
+| 2     | Luis: upgrade from rc to 1.0.x/0.1.x in its own PR, then install #361's build (pinned by commit) on one branch; add why/fix to the failures a user can act on; screenshots | Done 2026-11-11; see "Round 2 results"                                        |
 | 3     | Layer 2; log stream on the Luis dev deployment; run the six scenarios                                                                                                      |                                                                               |
 | 4     | Layer 3                                                                                                                                                                    |                                                                               |
 | 5     | Layer 4 docs                                                                                                                                                               |                                                                               |
 | 6     | Release; production log streams after approval                                                                                                                             |                                                                               |
+
+## Round 2 results (Luis, 2026-11-11)
+
+Worktree `1_apps/luis2-observability`.
+
+- `chore/better-convex-1.0` (574a7f7): the upgrade to nuxt 1.0.2 and functions/agents 0.1.0. `pnpm check`
+  and 11/11 e2e journeys pass. It needs no quarantine exception: 1.0.2 is older than 24 hours from
+  2026-11-10 16:15 UTC on.
+- `test/better-convex-obs-errors` (local only, never merge): 507fde2 installs the #361 builds pinned to
+  `95aad3c`; 9296ad2 is the Luis change. It waits for the release of this stack.
+
+Findings:
+
+- **Luis people read German text from a code map, not server text.** All 133 error displays go through
+  `convexErrorMessage(error, fallback)` (`app/features/errors/api/convexErrors.ts`); the server messages
+  are English and written for agents. So `why`/`fix` in Luis are for the MCP door, and the German map
+  stays the UI text. The docs must say this: `why`/`fix` help callers that show server text (agents,
+  single-language apps); an app with its own UI text maps `code`.
+- **Most agent-facing failures already carry the fix** in the message (`field: rule`,
+  `Use list_import_accounts`). Five failures got `why`/`fix` where it adds a reason or a next step, not
+  the 10 to 15 planned. A throwaway `callTool` run showed the agent gets `{ code, message, fix }`.
+- **The reference costs one function in an app with a central error helper.** The fallback now ends with
+  `Referenz: <request ID>`; one unit test pins it and the hidden wire text.
+- **The join works on a real backend.** A crash in the client sheet showed `Referenz: b461cf01bb1b9378`;
+  `npx convex logs --jsonl` had exactly one event with that `requestId`: `clients:create`, the full
+  error and stack, the execution time. The plain `convex dev` log lines do not show the request ID, so
+  the layer 4 docs must point to the dashboard, `convex logs --jsonl` or the log stream.
+- **Luis UX gap, not ours:** a sheet shows its form error at the end of a long form, out of view when the
+  person is at the top. Desktop and mobile screenshots needed a scroll.
+- **pkg.pr.new in an app needs two test-branch-only settings:** `blockExoticSubdeps: false` (the Nuxt
+  build depends on the Vue build by URL) and, while the base release is younger than 24 hours, an
+  exact-version quarantine exclude so pnpm can replace it.
+- Two Nuxt component suites time out in their setup hook (10 s) under the full parallel run on the test
+  branch; they pass alone. Load, not the change.
 
 ## Open
 
@@ -130,6 +169,7 @@ Six scenarios, run in a consumer app every round, in the same order:
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
   uses `why`/`fix` as a fallback.
-- Gap: no automated test drives a composable over a real WebSocket in a browser. Round 2 covers it
-  by hand; a playground e2e journey would make it permanent.
+- Gap: no automated test drives a composable over a real WebSocket in a browser. Round 2 covered it
+  in Luis with a throwaway Playwright spec; a playground e2e journey would make it permanent.
+- Done in #361: the error-handling page says who `why`/`fix` are for and where to search a request ID.
 - `packages/agents/test/types.test.ts` pins line numbers in `test/door/projects.ts`.
