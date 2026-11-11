@@ -207,6 +207,12 @@ Findings:
   9faea7854): `billingAutomation:startDaily` wrote `trace: "5123956460443c3b"`, and so did the
   scheduled `sweep` and all `processContract` runs: 12 events in 10 requests with 10 request IDs,
   one trace. `crons:cleanupEmails` starts nothing and wrote no trace. Not yet searched in PostHog.
+- Review after round 3 (2026-11-11): one transaction now writes one event (#362). An operation run
+  with `ctx.run*` from a query or mutation wrote its own `ok` with rows even when its caller then
+  failed and everything rolled back, and counts per call doubled (on dev: 10 `processContract`
+  events in 8 requests). Now it writes none, and the caller's `written` counts its rows. Not yet
+  rechecked on dev. D76 no longer claims a retried mutation makes the same trace: unverified, like
+  duplicate events after a write conflict.
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
