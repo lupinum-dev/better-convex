@@ -28,6 +28,8 @@ export interface Seen {
   tenant?: string
   approval?: string
   written?: ReadonlySet<string>
+  /** Rows the calls it ran in its own transaction wrote: they write no event, so this one counts them. */
+  innerWritten?: Set<string>
   readonly fields: Record<string, LogValue>
 }
 
@@ -82,6 +84,10 @@ export function callEvent(
   failure?: { error: unknown },
 ) {
   const code = failure && codeOf(failure.error)
+  const rows =
+    seen.written || seen.innerWritten
+      ? new Set([...(seen.written ?? []), ...(seen.innerWritten ?? [])]).size
+      : undefined
   return {
     type: 'better-convex.call',
     ...(action !== undefined && { action }),
@@ -91,7 +97,7 @@ export function callEvent(
     outcome: failure ? 'error' : 'ok',
     ...(code !== undefined && { code }),
     // A failed call keeps none of its writes, so only a call that succeeded counts them.
-    ...(!failure && kind !== 'query' && seen.written && { written: seen.written.size }),
+    ...(!failure && kind !== 'query' && rows !== undefined && { written: rows }),
     ...(seen.approval !== undefined && { approval: seen.approval }),
     ...(Object.keys(seen.fields).length > 0 && { fields: seen.fields }),
   }

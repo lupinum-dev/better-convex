@@ -174,6 +174,22 @@ test('public actions, jobs and internal actions write one event each', async () 
   ])
 })
 
+// Catches: an inner call reporting "ok" and rows written when the transaction it ran in rolled
+// back, or the outer event missing the rows its inner calls wrote.
+test("a call run inside another call's transaction writes no event of its own", async () => {
+  const { t, as, person, ann, orgId, projectId } = await setup()
+  await as('ann').mutation(fn('ops:renameVia'), { projectId, name: 'Via', thenFail: false })
+  await as('ann')
+    .mutation(fn('ops:renameVia'), { projectId, name: 'Lost', thenFail: true })
+    .catch(() => {})
+  const base = { type: 'better-convex.call', action: 'projects.rename', kind: 'mutation' }
+  expect(events()).toEqual([
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1 },
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT' },
+  ])
+  await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Via' })
+})
+
 // Catches: events from an app that did not turn `observe` on, or `ctx.log.set` failing there.
 test('without observe, calls write no event and ctx.log.set does nothing', async () => {
   const { t, as, projectId } = await setup()
