@@ -231,3 +231,10 @@ Findings:
   in Luis with a throwaway Playwright spec; a playground e2e journey would make it permanent.
 - Done in #361: the error-handling page says who `why`/`fix` are for and where to search a request ID.
 - `packages/agents/test/types.test.ts` pins line numbers in `test/door/projects.ts`.
+- Stack review (2026-11-11, before merge): three gaps in #362, fixed in 73a8ad198 with tests that
+  fail without each fix. (1) An inner mutation handed back only its own rows, not those of calls it
+  ran itself, so the caller's `written` lost rows two levels down. (2) `ctx.log.set` fields of an
+  inner call were lost, since it writes no event; they now join the caller's. (3) A public action
+  refused by its check wrote an event without actor or tenant (the check runs in its own mutation);
+  the check now writes the refusal event, and a passed check returns the tenant. Layers 3 and 4
+  rebased on top.
