@@ -203,7 +203,10 @@ Findings:
   d8597bd): each event sits in the same `convex logs --jsonl` record as Convex's own event, under one
   request ID, and the crash's `Referenz` in the UI is that ID.
 
-- Round 3 answered (see results above). Layer 3 built; check it on Luis dev (a click that schedules work, then one `trace` search in PostHog).
+- Layer 3 checked on Luis dev (2026-11-11, test branch e9a1486, functions from a local tarball of
+  9faea7854): `billingAutomation:startDaily` wrote `trace: "5123956460443c3b"`, and so did the
+  scheduled `sweep` and all `processContract` runs: 12 events in 10 requests with 10 request IDs,
+  one trace. `crons:cleanupEmails` starts nothing and wrote no trace. Not yet searched in PostHog.
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
