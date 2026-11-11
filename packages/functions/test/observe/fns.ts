@@ -52,5 +52,13 @@ export function build(observe: boolean) {
 }
 
 export const fns = build(true)
-export const { query, mutation, internalAction, job, authorizeAction } = fns
+export const {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+  internalAction,
+  job,
+  authorizeAction,
+} = fns
 export const action = fns.action(makeFunctionReference<'mutation'>('fns:authorizeAction') as never)

@@ -746,6 +746,7 @@ export function defineFunctions<
         // outermost audited call. Under an unaudited call they write their own row.
         collect: audits || op.nested ? (ids) => ids.forEach((id) => written.add(id)) : undefined,
         spent: paid,
+        seen,
       },
     )
     /**
@@ -808,7 +809,9 @@ export function defineFunctions<
     chain?: {
       collect?: (ids: string[]) => void
       /** Buckets this call chain already took a token from. */
-      spent: readonly string[]
+      spent?: readonly string[]
+      /** This call's event: it counts the rows of the calls it runs in its own transaction. */
+      seen?: Seen
     },
   ) {
     const collect = chain?.collect
@@ -819,14 +822,24 @@ export function defineFunctions<
       ) ?? false
     // Every call to an operation, run now or scheduled, carries the buckets this call chain paid:
     // work a call schedules is part of that call, so the same bucket does not pay twice (#283).
-    const wrapArgs = (ref: unknown, args: unknown, as: ActingAs = acting, mutation = false) =>
+    // A query or a mutation has `db`: what it runs with `ctx.run*` joins its transaction and its
+    // event. An action's calls and scheduled work run on their own and write their own events.
+    const inner = observe && c.db !== undefined
+    const wrapArgs = (
+      ref: unknown,
+      args: unknown,
+      as: ActingAs = acting,
+      mutation = false,
+      run = false,
+    ) =>
       isComponent(ref)
         ? args
         : {
             actingAs: as,
             input: args ?? {},
             ...(mutation && collect && { nested: true }),
-            ...(chain && chain.spent.length > 0 && { spent: [...chain.spent] }),
+            ...(chain?.spent && chain.spent.length > 0 && { spent: [...chain.spent] }),
+            ...(run && inner && { inner: true }),
           }
     // Work an agent's call schedules is part of that call: it carries the `scheduled` mark, so it
     // runs after the turn moves on (#278). Work an approved request schedules while it runs also
@@ -853,7 +866,7 @@ export function defineFunctions<
             [name]: async (ref: unknown, args?: unknown) => {
               let out: unknown
               try {
-                out = await c[name](ref, wrapArgs(ref, args, acting, name === 'runMutation'))
+                out = await c[name](ref, wrapArgs(ref, args, acting, name === 'runMutation', true))
               } catch (error) {
                 throw notAnOperation(ref, error)
               } finally {
@@ -873,7 +886,11 @@ export function defineFunctions<
                 throw notAnOperation(ref, null)
               }
               const { result, written } = out as { result: unknown; written?: string[] }
-              if (written) collect?.(written)
+              if (written) {
+                collect?.(written)
+                if (chain?.seen)
+                  for (const id of written) (chain.seen.innerWritten ??= new Set()).add(id)
+              }
               return result
             },
           }
@@ -1176,6 +1193,8 @@ export function defineFunctions<
     nested: v.optional(v.boolean()),
     /** Set by `ctx.run*` and `ctx.scheduler`: the buckets an outer operation already took a token from. */
     spent: v.optional(v.array(v.string())),
+    /** Set by `ctx.run*` of a query or mutation with `observe`: the caller's event covers this call. */
+    inner: v.optional(v.boolean()),
   })
 
   /**
@@ -1223,10 +1242,14 @@ export function defineFunctions<
         }),
         handler: async (
           ctx: QCtx,
-          { actingAs: who, input }: { actingAs: ActingAs; input: ObjectType<Args> },
+          {
+            actingAs: who,
+            input,
+            inner,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; inner?: boolean },
         ) => {
           const seen = newSeen()
-          return observed(observe, 'query', spec.action, seen, async () => {
+          return observed(observe && !inner, 'query', spec.action, seen, async () => {
             const { ctx: checked, settle } = await authorizeInternal(
               ctx,
               spec,
@@ -1269,15 +1292,17 @@ export function defineFunctions<
             input,
             nested,
             spent,
+            inner,
           }: {
             actingAs: ActingAs
             input: ObjectType<Args>
             nested?: boolean
             spent?: string[]
+            inner?: boolean
           },
         ) => {
           const seen = newSeen()
-          return observed(observe, 'mutation', spec.action, seen, async () => {
+          return observed(observe && !inner, 'mutation', spec.action, seen, async () => {
             const {
               ctx: checked,
               settle,
@@ -1288,7 +1313,8 @@ export function defineFunctions<
             // Called from another operation's transaction: that call writes the one audit row, with these ids.
             if (nested) return { operation: operationMark, result, written: [...written] }
             await record()
-            return { operation: operationMark, result }
+            // The caller's event counts these rows; this call writes none of its own.
+            return { operation: operationMark, result, ...(inner && { written: [...written] }) }
           })
         },
       }),
@@ -1546,7 +1572,7 @@ export function defineFunctions<
       // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- a job may return nothing
     ) => Promise<Value | void>
   }) {
-    for (const reserved of ['actingAs', 'input']) {
+    for (const reserved of ['actingAs', 'input', 'inner']) {
       if (reserved in spec.args)
         throw new Error(`Job ${spec.name}: the argument name ${reserved} is reserved. Rename it.`)
     }
@@ -1563,6 +1589,7 @@ export function defineFunctions<
       ),
       actingAs: v.optional(actingAsValidator),
       input: v.optional(v.object(spec.args)),
+      inner: v.optional(v.boolean()),
     }
     // A job runs as the system, by design: crons and the cleanup they schedule.
     return guarded(
@@ -1573,8 +1600,12 @@ export function defineFunctions<
           {
             actingAs: who,
             input: wrapped,
+            inner,
             ...plain
-          }: { actingAs?: ActingAs; input?: ObjectType<Args> } & Record<string, unknown>,
+          }: { actingAs?: ActingAs; input?: ObjectType<Args>; inner?: boolean } & Record<
+            string,
+            unknown
+          >,
         ) => {
           if (who !== undefined && who.kind !== 'system')
             throw new Error(
@@ -1589,7 +1620,7 @@ export function defineFunctions<
           const actor: SystemActor = { kind: 'system', job: spec.name }
           const seen = newSeen()
           sawActor(seen, actor)
-          return observed(observe, 'mutation', `job.${spec.name}`, seen, async () => {
+          return observed(observe && !inner, 'mutation', `job.${spec.name}`, seen, async () => {
             let tainted: unknown = null
             const nested = nestedCalls(
               ctx,
@@ -1599,6 +1630,7 @@ export function defineFunctions<
                 (tainted ??= new Error(
                   'This job reached a function that is not an internal operation; nothing it did is kept.',
                 )),
+              { seen },
             )
             const result = await spec.handler(
               { ...ctx, ...nested, actor, log: logOf(seen) } as never,

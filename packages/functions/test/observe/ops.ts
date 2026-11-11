@@ -1,7 +1,10 @@
 import { fail } from '@lupinum/better-convex-functions'
+import { makeFunctionReference } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 
-import { action, internalAction, job, mutation, query } from './fns'
+import { action, internalAction, internalMutation, job, mutation, query } from './fns'
+
+const ref = (name: string) => makeFunctionReference<'mutation'>(name) as never
 
 export const read = query({
   action: 'projects.read',
@@ -69,4 +72,24 @@ export const sweep = job({
 export const fetchSite = internalAction({
   args: {},
   handler: async () => null,
+})
+
+/** Renames through an internal mutation in its own transaction, then fails when asked to. */
+export const renameVia = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string(), thenFail: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, name, thenFail }) => {
+    await ctx.runMutation(ref('ops:renameInner'), { projectId, name } as never)
+    if (thenFail) fail('INVALID_INPUT', 'Stopped after the inner rename.')
+    return null
+  },
+})
+
+export const renameInner = internalMutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+  },
 })
