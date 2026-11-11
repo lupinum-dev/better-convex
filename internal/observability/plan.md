@@ -47,7 +47,7 @@ Worktree: `better-convex-worktrees/observability`. Base: `origin/main` at `bf9c1
 1. `obs/errors`: why/fix and request ID. **PR #361, open.**
 2. `obs/event`: the call event and `ctx.log.set`. **Built 2026-11-11; PR open.**
 3. `obs/trace`: a trace through nested and scheduled operations. **Built 2026-11-11; D76.**
-4. `obs/docs`: an operations page for log streams, with a PostHog recipe.
+4. `obs/docs`: an operations page for log streams, with a PostHog recipe. **Built 2026-11-11.**
 
 Release after the whole stack merges: functions/agents 0.2.0, vue/nuxt 1.1.0.
 
@@ -213,6 +213,16 @@ Findings:
   events in 8 requests). Now it writes none, and the caller's `written` counts its rows. Not yet
   rechecked on dev. D76 no longer claims a retried mutation makes the same trace: unverified, like
   duplicate events after a write conflict.
+- Rechecked on dev (test branch 1010d6b, functions from a tarball of 6c9e46386): the billing job now
+  writes 8 `processContract` events in 8 requests (was 10), all under one trace.
+- Layer 4 (2026-11-11): `docs/content/docs/6.operations/9.log-streams.md`. PostHog Logs search: the
+  Message filter (`contains`, case-insensitive substring; `matches regex`, RE2) runs on the body,
+  which is Convex's record as JSON; our event sits in it with `\"` quotes, so search words and IDs,
+  not JSON fragments. PostHog's "JSON parse log attribute" parses a JSON object or a JSON string
+  holding one, but Convex's message is `object-inspect` output (`'{…}'`), so it adds no fields.
+  Left out: PostHog SQL on the logs table (columns not documented; untried) and `custom_audit`.
+- Luis #60: quarantine exception removed (26d1f81) once 1.0.2 was older than 24 hours; frozen
+  install passes. Merge needs Matthias (production deploy).
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
