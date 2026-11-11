@@ -75,6 +75,9 @@ describe('ConvexCallError golden fixtures ', () => {
       functionName: undefined,
       outcome: undefined,
       phase: undefined,
+      why: undefined,
+      fix: undefined,
+      requestId: undefined,
     })
   })
 
@@ -125,6 +128,53 @@ describe('ConvexCallError golden fixtures ', () => {
     expect(normalized.data).toEqual(data)
     expect(normalized).toBeInstanceOf(ConvexCallError)
     expect(inspect(normalized)).not.toContain(SECRET)
+  })
+
+  // The wire text below is what a browser ConvexClient received from a local backend
+  // (convex 1.43): the request ID is the only part of it that may reach the caller.
+  const wire = (fn: string, rest: string) =>
+    `[CONVEX M(${fn})] [Request ID: 0bdbeef9b69d8533] Server Error\n${rest}\n    at handler (../convex/private.ts:2:51)\n\n  Called by client`
+
+  it('6f. an explained failure keeps why, fix and the request ID, never the wire text', () => {
+    const data = {
+      code: 'INVALID_INPUT',
+      message: 'The invoice could not be sent.',
+      why: 'The client has no email address.',
+      fix: 'Add an email address in the client settings.',
+    }
+    const appError = new ConvexError(data)
+    Object.defineProperty(appError, 'message', {
+      value: wire('documents:send', `Uncaught ConvexError: ${SECRET}`),
+    })
+    const normalized = normalizeConvexError(appError)
+
+    expect(normalized).toMatchObject({
+      kind: 'server',
+      code: 'INVALID_INPUT',
+      message: data.message,
+      why: data.why,
+      fix: data.fix,
+      requestId: '0bdbeef9b69d8533',
+    })
+    expect(JSON.stringify(normalized)).not.toContain(SECRET)
+    // The SSR payload and H3 bodies carry the serialized shape: nothing is lost on the way.
+    expect(normalizeConvexError(JSON.parse(JSON.stringify(normalized)))).toMatchObject({
+      why: data.why,
+      fix: data.fix,
+      requestId: '0bdbeef9b69d8533',
+    })
+  })
+
+  it('6g. an unexpected server failure keeps only its request ID', () => {
+    const normalized = normalizeConvexError(
+      new Error(wire('documents:send', `Uncaught Error: ${SECRET}`)),
+    )
+    expect(normalized).toMatchObject({
+      kind: 'unknown',
+      message: 'Unknown Convex error',
+      requestId: '0bdbeef9b69d8533',
+    })
+    expect(JSON.stringify(normalized)).not.toContain(SECRET)
   })
 
   it('6b. cross-package ConvexError marker (not instanceof) is still server', () => {
@@ -465,6 +515,10 @@ describe('isSerializedConvexCallError strictness ', () => {
     ['an unknown outcome', { ...base, outcome: 'committed' }, false],
     ['a numeric outcome', { ...base, outcome: 1 }, false],
     ['an unknown phase', { ...base, phase: 'verify' }, false],
+    ['help and a request ID', { ...base, why: 'w', fix: 'f', requestId: '0bdbeef9b69d8533' }, true],
+    ['an empty why', { ...base, why: '' }, false],
+    ['a numeric fix', { ...base, fix: 1 }, false],
+    ['a request ID that is not hexadecimal', { ...base, requestId: '<img src=x>' }, false],
     ['only the name', { name: 'ConvexCallError' }, false],
     ['an unknown kind', { ...base, kind: 'nope' }, false],
     ['a numeric message', { ...base, message: 42 }, false],

@@ -197,3 +197,20 @@ test.concurrent(
     expect(errors[0]).toMatch(/^projects\.ts[\s\S]*A job runs from a cron or another job/)
   },
 )
+
+// Help on NOT_FOUND would tell a caller that a row it may not see exists; FAILED keeps its
+// detail in the log. Both must be type errors; help on any other code must compile.
+test.concurrent('fail takes why and fix, but not on NOT_FOUND', { timeout: 60_000 }, async () => {
+  const at = "fail('INVALID_INPUT', 'name: use 1 to 100 visible characters.')"
+  const help = "{ why: 'Names show in lists.', fix: 'Use 1 to 100 characters.' }"
+  expect(
+    await typeErrors('help', [
+      ['projects.ts', at, `fail('INVALID_INPUT', 'name: too long.', ${help})`],
+    ]),
+  ).toEqual([])
+  const errors = await typeErrors('help-not-found', [
+    ['projects.ts', at, `fail('NOT_FOUND', 'No project.', ${help})`],
+  ])
+  expect(errors).toHaveLength(1)
+  expect(errors[0]).toMatch(/^projects\.ts/)
+})

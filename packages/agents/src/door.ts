@@ -10,7 +10,14 @@ import { httpActionGeneric } from 'convex/server'
 
 import type { McpDoorAuth, McpPrincipal } from './access'
 import { handleMcpRequest } from './handler'
-import { grantedTools, toolCall, toolFailure, type CatalogEntry, type ToolSuccess } from './tools'
+import {
+  grantedTools,
+  toolCall,
+  toolFailure,
+  type CatalogEntry,
+  type ToolFailure,
+  type ToolSuccess,
+} from './tools'
 import { maximumMcpResponseBytes } from './transport'
 
 /** What `createMcpServer` needs from the module that calls `defineTools`. */
@@ -102,10 +109,13 @@ function responseBytes(text: string, output: ToolSuccess, envelope: Envelope): n
   return new TextEncoder().encode(JSON.stringify(message)).byteLength
 }
 
-function failure(reason: { code: string; message: string }): CallToolResult {
+/** Hosts that show only the text still show why and how to fix it. */
+function failure(reason: ToolFailure): CallToolResult {
   return {
     isError: true,
-    content: [{ type: 'text', text: reason.message }],
+    content: [
+      { type: 'text', text: [reason.message, reason.why, reason.fix].filter(Boolean).join(' ') },
+    ],
     structuredContent: { error: reason },
   }
 }

@@ -42,6 +42,9 @@ onMounted(() => {
     status: (e as { status?: number } | null)?.status ?? null,
     functionName: (e as { functionName?: string } | null)?.functionName ?? null,
     data: (e as { data?: unknown } | null)?.data ?? null,
+    why: e?.why ?? null,
+    fix: e?.fix ?? null,
+    requestId: e?.requestId ?? null,
     // Raw causes are never retained and cannot appear after payload revival.
     causeIsUndefined: e ? (e as unknown as { cause?: unknown }).cause === undefined : null,
     jsonString: e ? JSON.stringify(e) : null,
@@ -60,6 +63,9 @@ onMounted(() => {
       <p class="err-kind">{{ result.error.value.kind }}</p>
       <p class="err-message">{{ result.error.value.message }}</p>
       <p class="err-status">{{ result.error.value.status }}</p>
+      <p class="err-why">{{ result.error.value.why }}</p>
+      <p class="err-fix">{{ result.error.value.fix }}</p>
+      <p class="err-ref">Reference: {{ result.error.value.requestId }}</p>
     </div>
     <div v-else class="no-err">no error</div>
   </div>

@@ -151,22 +151,71 @@ export const errorCodes = [
 export type ErrorCode = (typeof errorCodes)[number]
 
 /**
+ * Help for the person or agent who meets a failure: `why` it happened and
+ * what they can do to `fix` it. The caller reads it as written, so write it
+ * for them and never build it from internal state.
+ */
+export interface FailureHelp {
+  readonly why?: string
+  readonly fix?: string
+}
+
+/**
+ * Codes that take no help. `NOT_FOUND` must read like a missing row, so it
+ * cannot tell that a row the actor may not see exists; `FAILED` keeps its
+ * detail in the log.
+ */
+type CodeWithoutHelp = 'NOT_FOUND' | 'FAILED'
+const codesWithoutHelp: readonly ErrorCode[] = ['NOT_FOUND', 'FAILED'] satisfies CodeWithoutHelp[]
+
+/**
+ * The help a failure may carry: non-empty text only, and none for the codes above, also when a
+ * cast or a dependency's `ConvexError` sets it. Convex values have no `undefined`, so a missing
+ * field is left out.
+ */
+function helpOf(code: ErrorCode, help: { why?: unknown; fix?: unknown } | undefined): FailureHelp {
+  if (!help || codesWithoutHelp.includes(code)) return {}
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+  const why = text(help.why)
+  const fix = text(help.fix)
+  return { ...(why && { why }), ...(fix && { fix }) }
+}
+
+/** A failure as callers receive it: the `ConvexError` data of {@link fail}. */
+export interface Failure extends FailureHelp {
+  readonly code: ErrorCode
+  readonly message: string
+}
+
+/**
  * A failure the caller may see. Anything else stays internal: callers see a
  * generic message and the log keeps the detail. Only `ErrorCode`s, so a
  * misspelled code is a type error and every code a client meets is listed.
+ * `help` adds `why` and `fix`, which the web client shows as
+ * `ConvexCallError.why` and `.fix`.
  */
-export function fail(code: ErrorCode, message: string): never {
-  throw new ConvexError({ code, message })
+export function fail(code: ErrorCode, message: string): never
+export function fail(
+  code: Exclude<ErrorCode, CodeWithoutHelp>,
+  message: string,
+  help: FailureHelp,
+): never
+export function fail(code: ErrorCode, message: string, help?: FailureHelp): never {
+  throw new ConvexError({ code, message, ...helpOf(code, help) })
 }
 
 /**
  * The coded failure inside an error, or `null` for an internal one. Only an `ErrorCode` counts:
  * a `ConvexError` from a dependency or a component may carry any code and private text.
  */
-export function failureOf(error: unknown): { code: ErrorCode; message: string } | null {
-  const data = (error as { data?: { code?: unknown; message?: unknown } } | null)?.data
+export function failureOf(error: unknown): Failure | null {
+  const data = (error as { data?: Record<string, unknown> } | null)?.data
   if (!data || typeof data !== 'object' || !isErrorCode(data.code)) return null
-  return { code: data.code, message: typeof data.message === 'string' ? data.message : data.code }
+  return {
+    code: data.code,
+    message: typeof data.message === 'string' ? data.message : data.code,
+    ...helpOf(data.code, data),
+  }
 }
 
 const isErrorCode = (code: unknown): code is ErrorCode =>
