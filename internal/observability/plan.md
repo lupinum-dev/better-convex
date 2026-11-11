@@ -238,3 +238,7 @@ Findings:
   refused by its check wrote an event without actor or tenant (the check runs in its own mutation);
   the check now writes the refusal event, and a passed check returns the tenant. Layers 3 and 4
   rebased on top.
+- CI mutants (2026-11-11): five rows no longer found their text after the `observed()` wrapper
+  reindented code (C14-action-hands-over, S7-internal-action, C10-shown-operation), the review fix
+  (S-A-audit-nested-no-row) and the trace chain (C14-action-one-token, #364). Find texts updated;
+  each row passes locally, and all 443 rows match once on every branch.
