@@ -183,23 +183,26 @@ Findings:
 - **Layer 3 is needed:** Convex's records do not link scheduled work to its parent
   (`parentExecutionId: null`, `caller: "Scheduler"`, a new request ID per run). The handed-over actor
   says who; only a trace ID says which call.
-- Convex stores every line as `'{"type":…}'` (in quotes). Whether PostHog gets it quoted: to check
-  in PostHog.
+- **PostHog Logs gets every event** (CSV export from Matthias, service `luis`): all 15 lines, under
+  the same `request_id` as Convex's `function_execution` record, which has the final status and the
+  error text. PostHog Error Tracking got exactly the two failures (matched to the millisecond), and
+  nothing for the jobs. No retry happened, so duplicate events after a write conflict stay unseen.
+- PostHog maps only `convex.topic`, `convex.function.path` and `convex.function.type` to attributes.
+  Our event is the `message` string inside the body, as Convex prints it: `'{"type":…}'`, with
+  Convex's quotes around a string argument. No form of `console.log` gives PostHog fields of its own,
+  so the line stays a JSON string (strip the outer quotes and it parses); full-text search finds
+  `better-convex.call`, codes and actor keys. Field queries are for the layer 4 recipe (PostHog SQL
+  on the body, not yet tried).
+- A mutation that calls another wrapped function writes one event per call under one request ID
+  (`processContract` and `billingCycles.js:materializeScheduled`).
 
 ## Open
 
 - Shown in Luis on a local backend (2026-11-11, test branch 9d4bbbe, functions from a local tarball of
   d8597bd): each event sits in the same `convex logs --jsonl` record as Convex's own event, under one
-  request ID, and the crash's `Referenz` in the UI is that ID. Convex records the line as
-  `'{"type":…}'` (in quotes): check in round 3 whether the stream sends it quoted; if PostHog cannot
-  parse it, log an object instead of a string.
+  request ID, and the crash's `Referenz` in the UI is that ID.
 
-- Round 3 questions, answered only by a real log stream: does the line arrive and is it searchable in
-  PostHog; does a mutation retried after a write conflict write duplicate events; do Convex's own
-  events already link a scheduled job to its parent (then layer 3 shrinks). Decide layer 3 after.
-- Round 3 needs Matthias: a PostHog project (EU host) and its key, set as a log stream on the Luis dev
-  deployment in the Convex dashboard.
-
+- Round 3 answered (see results above). Next: layer 3, a trace ID through scheduled work.
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and
