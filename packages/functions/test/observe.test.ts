@@ -198,11 +198,48 @@ test("a call run inside another call's transaction writes no event of its own", 
     .catch(() => {})
   const base = { type: 'better-convex.call', action: 'projects.rename', kind: 'mutation' }
   const fields = { project: { id: projectId } }
+  // Running another operation hands work on, so the call gets a trace.
+  const trace = expect.stringMatching(/^[0-9a-f]{16}$/)
   expect(events()).toEqual([
-    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1, fields },
-    { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT', fields },
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1, fields, trace },
+    {
+      ...base,
+      actor: person(ann),
+      tenant: orgId,
+      outcome: 'error',
+      code: 'INVALID_INPUT',
+      fields,
+      trace,
+    },
   ])
   await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Via' })
+})
+
+// Catches: scheduled work that cannot be tied to the call that started it (Convex gives it a new
+// request ID and no parent), or an operation or job that rejects the trace its caller hands over.
+test('work a call schedules carries its trace, and each event of the chain shows it', async () => {
+  vi.useFakeTimers()
+  const { t, as, projectId } = await setup()
+  await as('ann').mutation(fn('ops:renameLater'), { projectId, name: 'Later' })
+  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  await t.mutation(fn('ops:sweepAll'), {})
+  await t.finishAllScheduledFunctions(vi.runAllTimers)
+  await as('ann').mutation(fn('ops:rename'), { projectId, name: 'Alone' })
+  const got = events().map(({ action, kind, outcome, trace }) => ({ action, kind, outcome, trace }))
+  const first = got[0]?.trace
+  const second = got[3]?.trace
+  expect(first).toMatch(/^[0-9a-f]{16}$/)
+  expect(second).toMatch(/^[0-9a-f]{16}$/)
+  expect(second).not.toBe(first)
+  expect(got).toEqual([
+    { action: 'projects.rename', kind: 'mutation', outcome: 'ok', trace: first },
+    { action: 'projects.rename', kind: 'mutation', outcome: 'ok', trace: first },
+    { kind: 'action', outcome: 'ok', trace: first },
+    { action: 'job.sweepAll', kind: 'mutation', outcome: 'ok', trace: second },
+    { action: 'job.sweep', kind: 'mutation', outcome: 'ok', trace: second },
+    { action: 'projects.rename', kind: 'mutation', outcome: 'ok' },
+  ])
+  vi.useRealTimers()
 })
 
 // Catches: events from an app that did not turn `observe` on, or `ctx.log.set` failing there.

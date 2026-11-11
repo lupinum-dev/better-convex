@@ -2,7 +2,15 @@ import { fail } from '@lupinum/better-convex-functions'
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
 
-import { action, internalAction, internalMutation, job, mutation, query } from './fns'
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  job,
+  mutation,
+  query,
+} from './fns'
 
 const ref = (name: string) => makeFunctionReference<'mutation'>(name) as never
 
@@ -101,5 +109,49 @@ export const renameInner = internalMutation({
   args: { projectId: v.id('projects'), name: v.string() },
   handler: async (ctx, { projectId, name }) => {
     await ctx.db.patch(projectId, { name })
+  },
+})
+
+// A chain across requests: a mutation schedules an internal mutation, which schedules an internal
+// action, which reads through an internal query.
+export const renameLater = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(0, ref('ops:renameNow'), args as never)
+    return null
+  },
+})
+
+export const renameNow = internalMutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, { projectId, name }) => {
+    await ctx.db.patch(projectId, { name })
+    await ctx.scheduler.runAfter(0, ref('ops:notify'), { projectId } as never)
+  },
+})
+
+export const notify = internalAction({
+  args: { projectId: v.id('projects') },
+  handler: async (ctx, { projectId }) => {
+    await ctx.runQuery(ref('ops:peek'), { projectId } as never)
+    return null
+  },
+})
+
+export const peek = internalQuery({
+  action: 'projects.read',
+  args: { projectId: v.id('projects') },
+  handler: async (ctx, { projectId }) => (await ctx.db.get(projectId))!.name,
+})
+
+/** A job that schedules another job. */
+export const sweepAll = job({
+  name: 'sweepAll',
+  args: {},
+  handler: async (ctx) => {
+    await ctx.scheduler.runAfter(0, ref('ops:sweep'), {} as never)
   },
 })
