@@ -170,6 +170,12 @@ Findings:
 
 ## Open
 
+- Shown in Luis on a local backend (2026-11-11, test branch 9d4bbbe, functions from a local tarball of
+  d8597bd): each event sits in the same `convex logs --jsonl` record as Convex's own event, under one
+  request ID, and the crash's `Referenz` in the UI is that ID. Convex records the line as
+  `'{"type":…}'` (in quotes): check in round 3 whether the stream sends it quoted; if PostHog cannot
+  parse it, log an object instead of a string.
+
 - Round 3 questions, answered only by a real log stream: does the line arrive and is it searchable in
   PostHog; does a mutation retried after a write conflict write duplicate events; do Convex's own
   events already link a scheduled job to its parent (then layer 3 shrinks). Decide layer 3 after.
