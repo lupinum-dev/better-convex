@@ -45,7 +45,18 @@ import {
 import { defineErasure, type ErasureEntry, type ErasureMap } from './erasure'
 import { guarded, OPERATION } from './guard'
 import { rateLimited, takeToken } from './limits'
-import { logOf, newSeen, observed, sawActing, sawActor, type CallLog, type Seen } from './observe'
+import {
+  fieldsOf,
+  logFailure,
+  logOf,
+  newSeen,
+  observed,
+  sawActing,
+  sawActor,
+  type CallLog,
+  type LogValue,
+  type Seen,
+} from './observe'
 import {
   decide,
   isAudited,
@@ -885,12 +896,18 @@ export function defineFunctions<
                 reachedRaw()
                 throw notAnOperation(ref, null)
               }
-              const { result, written } = out as { result: unknown; written?: string[] }
+              const { result, written, fields } = out as {
+                result: unknown
+                written?: string[]
+                fields?: Record<string, LogValue>
+              }
               if (written) {
                 collect?.(written)
                 if (chain?.seen)
                   for (const id of written) (chain.seen.innerWritten ??= new Set()).add(id)
               }
+              // An inner call writes no event: its fields join this call's.
+              if (fields && chain?.seen) Object.assign(chain.seen.fields, fields)
               return result
             },
           }
@@ -1238,7 +1255,11 @@ export function defineFunctions<
       internalQueryGeneric({
         args: internalArgs(spec.args),
         ...(spec.returns && {
-          returns: v.object({ operation: v.literal(operationMark), result: spec.returns }),
+          returns: v.object({
+            operation: v.literal(operationMark),
+            result: spec.returns,
+            fields: v.optional(v.record(v.string(), v.any())),
+          }),
         }),
         handler: async (
           ctx: QCtx,
@@ -1262,6 +1283,7 @@ export function defineFunctions<
             return {
               operation: operationMark,
               result: settle(await spec.handler(checked as never, input)),
+              ...(inner && fieldsOf(seen)),
             }
           })
         },
@@ -1283,6 +1305,7 @@ export function defineFunctions<
             operation: v.literal(operationMark),
             result: spec.returns,
             written: v.optional(v.array(v.string())),
+            fields: v.optional(v.record(v.string(), v.any())),
           }),
         }),
         handler: async (
@@ -1310,11 +1333,16 @@ export function defineFunctions<
               written,
             } = await authorizeInternal(ctx, spec, who, input, true, { nested, spent }, seen)
             const result = settle(await spec.handler(checked as never, input))
+            // In its caller's transaction, this call writes no event: the caller's event counts its
+            // rows, also those of the calls it ran itself, and shows its fields.
+            const handBack = inner
+              ? { written: [...written, ...(seen.innerWritten ?? [])], ...fieldsOf(seen) }
+              : {}
             // Called from another operation's transaction: that call writes the one audit row, with these ids.
-            if (nested) return { operation: operationMark, result, written: [...written] }
+            if (nested)
+              return { operation: operationMark, result, written: [...written], ...handBack }
             await record()
-            // The caller's event counts these rows; this call writes none of its own.
-            return { operation: operationMark, result, ...(inner && { written: [...written] }) }
+            return { operation: operationMark, result, ...handBack }
           })
         },
       }),
@@ -1408,30 +1436,44 @@ export function defineFunctions<
         checked: v.literal(actionCheckMark),
         actor: v.any(),
         paid: v.array(v.string()),
+        tenant: v.optional(v.string()),
       }),
       handler: async (
         ctx: MCtx,
         { action, shape, input }: { action: string; shape: string; input: Record<string, unknown> },
       ) => {
         assertAction({ action })
-        const who = await caller(ctx, action)
-        const { decision, paid } = await authorize(
-          ctx,
-          { kind: 'action', action, shape: JSON.parse(shape) as ValidatorJson },
-          who,
-          input,
-        )
-        // Only people and visitors call a public action, and the policy asks no person about them.
-        // Should an agent ever arrive here, an action cannot wait for a person's approval.
-        if (decision !== 'allow')
-          fail('FORBIDDEN', `${action} needs a person's approval, and an action cannot wait.`)
-        return { checked: actionCheckMark, actor: shown(who), paid: [...paid] }
+        const seen = newSeen()
+        try {
+          const who = await caller(ctx, action)
+          const { decision, paid } = await authorize(
+            ctx,
+            { kind: 'action', action, shape: JSON.parse(shape) as ValidatorJson },
+            who,
+            input,
+            seen,
+          )
+          // Only people and visitors call a public action, and the policy asks no person about them.
+          // Should an agent ever arrive here, an action cannot wait for a person's approval.
+          if (decision !== 'allow')
+            fail('FORBIDDEN', `${action} needs a person's approval, and an action cannot wait.`)
+          return {
+            checked: actionCheckMark,
+            actor: shown(who),
+            paid: [...paid],
+            ...(seen.tenant !== undefined && { tenant: seen.tenant }),
+          }
+        } catch (error) {
+          // The event of a refused action: only the check knows its actor and tenant.
+          if (observe) logFailure('action', action, seen, error)
+          throw error
+        }
       },
     }),
   ) as unknown as RegisteredMutation<
     'internal',
     { action: string; shape: string; input: unknown },
-    Promise<{ checked: typeof actionCheckMark; actor: unknown; paid: string[] }>
+    Promise<{ checked: typeof actionCheckMark; actor: unknown; paid: string[]; tenant?: string }>
   >
 
   /**
@@ -1490,32 +1532,39 @@ export function defineFunctions<
         args: spec.args,
         returns: spec.returns,
         handler: async (ctx: ACtx, input: ObjectType<Args>) => {
-          const seen = newSeen()
-          return observed(observe, 'action', spec.action, seen, async () => {
-            const values: Record<string, unknown> = input
-            const named = withIds.filter((name) => name in values)
-            const checked = (await ctx
-              .runMutation(authorizeRef, {
-                action: spec.action,
-                shape,
-                input: Object.fromEntries(named.map((name) => [name, values[name]])),
-              })
-              .catch((error: unknown) => {
-                // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".
-                const message = error instanceof Error ? error.message : ''
-                if (!/Could not find (?:public )?function|there is no such export/i.test(message))
-                  throw error
-                throw new Error(
-                  `${spec.action}: fns.action names ${checkName} as its check, but no module exports it there. ` +
-                    'Add `authorizeAction` to `export const { … } = fns` in that module.',
-                )
-              })) as { checked?: unknown; actor: Actor<User> | Visitor; paid: string[] }
-            if (checked?.checked !== actionCheckMark)
+          const values: Record<string, unknown> = input
+          const named = withIds.filter((name) => name in values)
+          const checked = (await ctx
+            .runMutation(authorizeRef, {
+              action: spec.action,
+              shape,
+              input: Object.fromEntries(named.map((name) => [name, values[name]])),
+            })
+            .catch((error: unknown) => {
+              // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".
+              const message = error instanceof Error ? error.message : ''
+              if (!/Could not find (?:public )?function|there is no such export/i.test(message))
+                throw error
               throw new Error(
-                `${checkName} is not the check of defineFunctions. Pass internal.<module>.authorizeAction to fns.action.`,
+                `${spec.action}: fns.action names ${checkName} as its check, but no module exports it there. ` +
+                  'Add `authorizeAction` to `export const { … } = fns` in that module.',
               )
-            const { actor, paid } = checked
-            sawActor(seen, actor)
+            })) as {
+            checked?: unknown
+            actor: Actor<User> | Visitor
+            paid: string[]
+            tenant?: string
+          }
+          if (checked?.checked !== actionCheckMark)
+            throw new Error(
+              `${checkName} is not the check of defineFunctions. Pass internal.<module>.authorizeAction to fns.action.`,
+            )
+          const { actor, paid, tenant } = checked
+          // A refused check has written this call's event; from here on, the action writes it.
+          const seen = newSeen()
+          sawActor(seen, actor)
+          if (tenant !== undefined) seen.tenant = tenant
+          return observed(observe, 'action', spec.action, seen, async () => {
             // No transaction: a raw function the handler reached has already committed. The call
             // fails loudly, as an internal action does; the no-bypass test is what prevents it.
             let reached: unknown = null
@@ -1644,7 +1693,9 @@ export function defineFunctions<
               result: storable(result as Value | undefined),
             })
             // Called through ctx.run*, answer in the envelope that tells an internal operation from a raw function.
-            return who ? { operation: operationMark, result: null } : null
+            return who
+              ? { operation: operationMark, result: null, ...(inner && fieldsOf(seen)) }
+              : null
           })
         },
       }),

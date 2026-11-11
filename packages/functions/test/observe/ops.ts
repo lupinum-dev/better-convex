@@ -74,15 +74,25 @@ export const fetchSite = internalAction({
   handler: async () => null,
 })
 
-/** Renames through an internal mutation in its own transaction, then fails when asked to. */
+/** Renames through two internal mutations in its own transaction, then fails when asked to. */
 export const renameVia = mutation({
   action: 'projects.rename',
   args: { projectId: v.id('projects'), name: v.string(), thenFail: v.boolean() },
   returns: v.null(),
   handler: async (ctx, { projectId, name, thenFail }) => {
-    await ctx.runMutation(ref('ops:renameInner'), { projectId, name } as never)
+    await ctx.runMutation(ref('ops:renameMiddle'), { projectId, name } as never)
     if (thenFail) fail('INVALID_INPUT', 'Stopped after the inner rename.')
     return null
+  },
+})
+
+/** Adds the project to the event and hands the rename on. */
+export const renameMiddle = internalMutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, args) => {
+    ctx.log.set({ project: { id: args.projectId } })
+    await ctx.runMutation(ref('ops:renameInner'), args as never)
   },
 })
 

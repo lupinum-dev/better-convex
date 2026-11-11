@@ -146,10 +146,14 @@ test('a query writes an event only when it fails', async () => {
   ])
 })
 
-// Catches: a public action, a job or an internal action that leaves no event, or one per inner check.
+// Catches: a public action, a job or an internal action that leaves no event, or one per inner
+// check, or a refused action whose event does not say who was refused where.
 test('public actions, jobs and internal actions write one event each', async () => {
-  const { t, as, person, ann, orgId } = await setup()
+  const { t, as, person, ann, vic, orgId } = await setup()
   await as('ann').action(fn('ops:report'), { orgId })
+  await as('vic')
+    .action(fn('ops:report'), { orgId })
+    .catch(() => {})
   await t.mutation(fn('ops:sweep'), {})
   await t.action(fn('ops:fetchSite'), { actingAs: { kind: 'system', job: 'nightly' }, input: {} })
   const system = (job: string) => ({ key: `system:${job}`, kind: 'system', door: 'job', job })
@@ -159,8 +163,18 @@ test('public actions, jobs and internal actions write one event each', async () 
       action: 'reports.make',
       kind: 'action',
       actor: person(ann),
+      tenant: orgId,
       outcome: 'ok',
       fields: { org: orgId },
+    },
+    {
+      type: 'better-convex.call',
+      action: 'reports.make',
+      kind: 'action',
+      actor: person(vic),
+      tenant: orgId,
+      outcome: 'error',
+      code: 'FORBIDDEN',
     },
     {
       type: 'better-convex.call',
@@ -175,7 +189,7 @@ test('public actions, jobs and internal actions write one event each', async () 
 })
 
 // Catches: an inner call reporting "ok" and rows written when the transaction it ran in rolled
-// back, or the outer event missing the rows its inner calls wrote.
+// back, or the outer event missing the rows or fields of its inner calls, two levels down.
 test("a call run inside another call's transaction writes no event of its own", async () => {
   const { t, as, person, ann, orgId, projectId } = await setup()
   await as('ann').mutation(fn('ops:renameVia'), { projectId, name: 'Via', thenFail: false })
@@ -183,9 +197,10 @@ test("a call run inside another call's transaction writes no event of its own", 
     .mutation(fn('ops:renameVia'), { projectId, name: 'Lost', thenFail: true })
     .catch(() => {})
   const base = { type: 'better-convex.call', action: 'projects.rename', kind: 'mutation' }
+  const fields = { project: { id: projectId } }
   expect(events()).toEqual([
-    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1 },
-    { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT' },
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1, fields },
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT', fields },
   ])
   await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Via' })
 })

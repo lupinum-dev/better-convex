@@ -99,8 +99,17 @@ export function callEvent(
     // A failed call keeps none of its writes, so only a call that succeeded counts them.
     ...(!failure && kind !== 'query' && rows !== undefined && { written: rows }),
     ...(seen.approval !== undefined && { approval: seen.approval }),
-    ...(Object.keys(seen.fields).length > 0 && { fields: seen.fields }),
+    ...fieldsOf(seen),
   }
+}
+
+/** The fields the handler added, if any: for this call's event, or handed back to the caller's. */
+export const fieldsOf = (seen: Seen): { fields?: Record<string, LogValue> } =>
+  Object.keys(seen.fields).length > 0 ? { fields: seen.fields } : {}
+
+/** Writes the event of a call that failed. A console line survives the rollback of a failed mutation. */
+export function logFailure(kind: CallKind, action: string | undefined, seen: Seen, error: unknown) {
+  console.log(JSON.stringify(callEvent(kind, action, seen, { error })))
 }
 
 /**
@@ -120,7 +129,7 @@ export async function observed<T>(
   try {
     result = await run()
   } catch (error) {
-    console.log(JSON.stringify(callEvent(kind, action, seen, { error })))
+    logFailure(kind, action, seen, error)
     throw error
   }
   if (kind !== 'query') console.log(JSON.stringify(callEvent(kind, action, seen)))
