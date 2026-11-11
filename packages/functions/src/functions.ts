@@ -45,6 +45,7 @@ import {
 import { defineErasure, type ErasureEntry, type ErasureMap } from './erasure'
 import { guarded, OPERATION } from './guard'
 import { rateLimited, takeToken } from './limits'
+import { logOf, newSeen, observed, sawActing, sawActor, type CallLog, type Seen } from './observe'
 import {
   decide,
   isAudited,
@@ -289,6 +290,12 @@ export function defineFunctions<
   erasure?: Erasure
   /** The app schema (`import schema from './schema'`). Required with `erasure`, which checks its map against it. */
   schema?: SchemaDefinition<any, boolean>
+  /**
+   * Write one JSON line on the console for each call: who did which action, in which tenant,
+   * with which result and code, and how many rows it wrote. Queries write one only when they
+   * fail. A Convex log stream sends the lines to your log service. Off by default.
+   */
+  observe?: boolean
 }) {
   type QCtx = GenericQueryCtx<DM>
   type MCtx = GenericMutationCtx<DM>
@@ -298,6 +305,7 @@ export function defineFunctions<
   /** Signed-out callers reach only actions in `policy.public`. */
   type ActorFor<A> = A extends PublicActionOf<P> ? Actor<User> | Visitor : Actor<User>
   const { auth, policy } = config
+  const observe = config.observe === true
   const rules = config.rules as Record<string, Rule>
   const tenants = tenancy(rules)
   for (const [table, createdBy] of tenants.createdBy) {
@@ -582,7 +590,10 @@ export function defineFunctions<
       },
     actor: Actor<User> | Visitor | SystemActor,
     input: Record<string, unknown>,
+    /** What this call's event knows: the check fills in the actor, the tenant and the rows written. */
+    seen: Seen = newSeen(),
   ) {
+    sawActor(seen, actor)
     const rows = new Map<string, Record<string, unknown> | null>()
     const roles = new Map<string, string | null>()
     const load = async (id: string) => {
@@ -623,6 +634,7 @@ export function defineFunctions<
       }
     }
     const tenant = op.crossTenant ? undefined : deepest?.[0]
+    if (tenant) seen.tenant = tenant.id
     // The role where the call acts: in its tenant; across places, the role every place already
     // allowed above; for a call that names no tenant, the role outside any tenant. There is no
     // fallback: no role refuses the call. A public action needs none, so it costs no read.
@@ -702,6 +714,7 @@ export function defineFunctions<
       }
     }
     const written = new Set<string>()
+    seen.written = written
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
       actor: shown(actor),
@@ -774,6 +787,7 @@ export function defineFunctions<
         ...(files && 'storage' in ctx && { storage: deleting(ctx.storage as object, files) }),
         db: db as Ctx['db'],
         actor: shown(actor),
+        log: logOf(seen),
       },
     }
   }
@@ -1006,16 +1020,21 @@ export function defineFunctions<
       cancel: (id: GenericId<'_scheduled_functions'>) => Promise<void>
     }
   }
-  type QueryCtx = Omit<QCtx, 'runQuery'> & Runs<'query'>
+  /** `log`: fields for this call's event (see `observe`). */
+  type Logged = { log: CallLog }
+  type QueryCtx = Omit<QCtx, 'runQuery'> & Runs<'query'> & Logged
   type MutationCtx = Omit<MCtx, 'runQuery' | 'runMutation' | 'scheduler'> &
     Runs<'query' | 'mutation'> &
-    Scheduling
+    Scheduling &
+    Logged
   type JobCtx = Omit<MCtx, 'runQuery' | 'runMutation' | 'scheduler'> &
     Runs<'query' | 'mutation', true> &
-    Scheduling<true>
+    Scheduling<true> &
+    Logged
   type ActionCtx = Omit<ACtx, 'runQuery' | 'runMutation' | 'runAction' | 'scheduler'> &
     Runs<'query' | 'mutation' | 'action'> &
-    Scheduling
+    Scheduling &
+    Logged
 
   type Spec<
     Ctx,
@@ -1065,13 +1084,17 @@ export function defineFunctions<
       args: spec.args,
       returns: spec.returns,
       handler: async (ctx: QCtx, input: ObjectType<Args>) => {
-        const { ctx: checked, settle } = await authorize(
-          ctx,
-          op,
-          await caller(ctx, spec.action),
-          input,
-        )
-        return settle(await spec.handler(checked as never, input))
+        const seen = newSeen()
+        return observed(observe, 'query', spec.action, seen, async () => {
+          const { ctx: checked, settle } = await authorize(
+            ctx,
+            op,
+            await caller(ctx, spec.action),
+            input,
+            seen,
+          )
+          return settle(await spec.handler(checked as never, input))
+        })
       },
     })
     return operation<RegisteredQuery<'public', ObjectType<Args>, Promise<Infer<Returns>>>>(
@@ -1114,13 +1137,16 @@ export function defineFunctions<
       args: spec.args,
       returns: spec.returns,
       handler: async (ctx: MCtx, input: ObjectType<Args>) => {
-        const who = await caller(ctx, spec.action)
-        const { ctx: checked, settle, record } = await authorize(ctx, op, who, input)
-        const plan = frozen(await planOf(op, checked, input))
-        const result = settle(await spec.handler(checked as never, input, plan as Pl))
-        // Same transaction as the handler: a call that fails writes no audit row.
-        await record()
-        return result
+        const seen = newSeen()
+        return observed(observe, 'mutation', spec.action, seen, async () => {
+          const who = await caller(ctx, spec.action)
+          const { ctx: checked, settle, record } = await authorize(ctx, op, who, input, seen)
+          const plan = frozen(await planOf(op, checked, input))
+          const result = settle(await spec.handler(checked as never, input, plan as Pl))
+          // Same transaction as the handler: a call that fails writes no audit row.
+          await record()
+          return result
+        })
       },
     })
     return operation<RegisteredMutation<'public', ObjectType<Args>, Promise<Infer<Returns>>>>(
@@ -1164,9 +1190,10 @@ export function defineFunctions<
     input: Record<string, unknown>,
     writes = false,
     chain: { nested?: boolean; spent?: readonly string[] } = {},
+    seen: Seen = newSeen(),
   ) {
     const actor = await actingAs(ctx, who)
-    const authorized = await authorize(ctx, { ...spec, writes, ...chain }, actor, input)
+    const authorized = await authorize(ctx, { ...spec, writes, ...chain }, actor, input, seen)
     if (
       authorized.decision === 'approve' &&
       !(actor.kind === 'agent' && actor.approvalId !== undefined)
@@ -1198,11 +1225,22 @@ export function defineFunctions<
           ctx: QCtx,
           { actingAs: who, input }: { actingAs: ActingAs; input: ObjectType<Args> },
         ) => {
-          const { ctx: checked, settle } = await authorizeInternal(ctx, spec, who, input)
-          return {
-            operation: operationMark,
-            result: settle(await spec.handler(checked as never, input)),
-          }
+          const seen = newSeen()
+          return observed(observe, 'query', spec.action, seen, async () => {
+            const { ctx: checked, settle } = await authorizeInternal(
+              ctx,
+              spec,
+              who,
+              input,
+              false,
+              {},
+              seen,
+            )
+            return {
+              operation: operationMark,
+              result: settle(await spec.handler(checked as never, input)),
+            }
+          })
         },
       }),
     ) as unknown as FunctionReferenceTarget<'query', ObjectType<Args>, Infer<Returns>>
@@ -1238,17 +1276,20 @@ export function defineFunctions<
             spent?: string[]
           },
         ) => {
-          const {
-            ctx: checked,
-            settle,
-            record,
-            written,
-          } = await authorizeInternal(ctx, spec, who, input, true, { nested, spent })
-          const result = settle(await spec.handler(checked as never, input))
-          // Called from another operation's transaction: that call writes the one audit row, with these ids.
-          if (nested) return { operation: operationMark, result, written: [...written] }
-          await record()
-          return { operation: operationMark, result }
+          const seen = newSeen()
+          return observed(observe, 'mutation', spec.action, seen, async () => {
+            const {
+              ctx: checked,
+              settle,
+              record,
+              written,
+            } = await authorizeInternal(ctx, spec, who, input, true, { nested, spent }, seen)
+            const result = settle(await spec.handler(checked as never, input))
+            // Called from another operation's transaction: that call writes the one audit row, with these ids.
+            if (nested) return { operation: operationMark, result, written: [...written] }
+            await record()
+            return { operation: operationMark, result }
+          })
         },
       }),
     ) as unknown as FunctionReferenceTarget<'mutation', ObjectType<Args>, Infer<Returns>>
@@ -1283,40 +1324,46 @@ export function defineFunctions<
             spent,
           }: { actingAs: ActingAs; input: ObjectType<Args>; spent?: string[] },
         ) => {
-          // An action has no transaction: a raw function it reached has already committed. It fails loudly
-          // instead, and the no-bypass check (raw internal functions must not exist) is what prevents it.
-          let reached: unknown = null
-          const nested = nestedCalls(
-            ctx,
-            who,
-            () => {},
-            () =>
-              (reached ??= new Error(
-                'This action reached a function that is not an internal operation.',
-              )),
-            // The call that scheduled or ran this action paid these buckets: its saves do not pay again.
-            { spent: spent ?? [] },
-          )
-          // An action cannot read the approved plan: under an approval, it deletes files through
-          // an internal mutation, which can (release review 5).
-          const approved = who.kind === 'agent' && who.approvalId !== undefined
-          const result = await spec.handler(
-            {
-              ...ctx,
-              ...nested,
-              ...(approved && { storage: deleting(ctx.storage, new Set()) }),
-              actor: shown(who),
-            } as never,
-            input,
-          )
-          if (reached) {
-            console.error(
-              'Raw function reached from an internal action; its writes are committed. Make it an internal operation.',
-              reached,
+          const seen = newSeen()
+          sawActing(seen, who)
+          // An internal action names no policy action; Convex's own event for the request has its path.
+          return observed(observe, 'action', undefined, seen, async () => {
+            // An action has no transaction: a raw function it reached has already committed. It fails loudly
+            // instead, and the no-bypass check (raw internal functions must not exist) is what prevents it.
+            let reached: unknown = null
+            const nested = nestedCalls(
+              ctx,
+              who,
+              () => {},
+              () =>
+                (reached ??= new Error(
+                  'This action reached a function that is not an internal operation.',
+                )),
+              // The call that scheduled or ran this action paid these buckets: its saves do not pay again.
+              { spent: spent ?? [] },
             )
-            throw reached
-          }
-          return { operation: operationMark, result }
+            // An action cannot read the approved plan: under an approval, it deletes files through
+            // an internal mutation, which can (release review 5).
+            const approved = who.kind === 'agent' && who.approvalId !== undefined
+            const result = await spec.handler(
+              {
+                ...ctx,
+                ...nested,
+                ...(approved && { storage: deleting(ctx.storage, new Set()) }),
+                actor: shown(who),
+                log: logOf(seen),
+              } as never,
+              input,
+            )
+            if (reached) {
+              console.error(
+                'Raw function reached from an internal action; its writes are committed. Make it an internal operation.',
+                reached,
+              )
+              throw reached
+            }
+            return { operation: operationMark, result }
+          })
         },
       }),
     ) as unknown as FunctionReferenceTarget<'action', ObjectType<Args>, Infer<Returns>>
@@ -1417,52 +1464,59 @@ export function defineFunctions<
         args: spec.args,
         returns: spec.returns,
         handler: async (ctx: ACtx, input: ObjectType<Args>) => {
-          const values: Record<string, unknown> = input
-          const named = withIds.filter((name) => name in values)
-          const checked = (await ctx
-            .runMutation(authorizeRef, {
-              action: spec.action,
-              shape,
-              input: Object.fromEntries(named.map((name) => [name, values[name]])),
-            })
-            .catch((error: unknown) => {
-              // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".
-              const message = error instanceof Error ? error.message : ''
-              if (!/Could not find (?:public )?function|there is no such export/i.test(message))
-                throw error
+          const seen = newSeen()
+          return observed(observe, 'action', spec.action, seen, async () => {
+            const values: Record<string, unknown> = input
+            const named = withIds.filter((name) => name in values)
+            const checked = (await ctx
+              .runMutation(authorizeRef, {
+                action: spec.action,
+                shape,
+                input: Object.fromEntries(named.map((name) => [name, values[name]])),
+              })
+              .catch((error: unknown) => {
+                // Convex: "Could not find public function for 'x:y'"; convex-test: "... there is no such export".
+                const message = error instanceof Error ? error.message : ''
+                if (!/Could not find (?:public )?function|there is no such export/i.test(message))
+                  throw error
+                throw new Error(
+                  `${spec.action}: fns.action names ${checkName} as its check, but no module exports it there. ` +
+                    'Add `authorizeAction` to `export const { … } = fns` in that module.',
+                )
+              })) as { checked?: unknown; actor: Actor<User> | Visitor; paid: string[] }
+            if (checked?.checked !== actionCheckMark)
               throw new Error(
-                `${spec.action}: fns.action names ${checkName} as its check, but no module exports it there. ` +
-                  'Add `authorizeAction` to `export const { … } = fns` in that module.',
+                `${checkName} is not the check of defineFunctions. Pass internal.<module>.authorizeAction to fns.action.`,
               )
-            })) as { checked?: unknown; actor: Actor<User> | Visitor; paid: string[] }
-          if (checked?.checked !== actionCheckMark)
-            throw new Error(
-              `${checkName} is not the check of defineFunctions. Pass internal.<module>.authorizeAction to fns.action.`,
+            const { actor, paid } = checked
+            sawActor(seen, actor)
+            // No transaction: a raw function the handler reached has already committed. The call
+            // fails loudly, as an internal action does; the no-bypass test is what prevents it.
+            let reached: unknown = null
+            const nested = nestedCalls(
+              ctx,
+              handOver(actor),
+              () => {},
+              () =>
+                (reached ??= new Error(
+                  'This action reached a function that is not an internal operation.',
+                )),
+              // Its mutations take no second token from the bucket the check took one from.
+              { spent: paid },
             )
-          const { actor, paid } = checked
-          // No transaction: a raw function the handler reached has already committed. The call
-          // fails loudly, as an internal action does; the no-bypass test is what prevents it.
-          let reached: unknown = null
-          const nested = nestedCalls(
-            ctx,
-            handOver(actor),
-            () => {},
-            () =>
-              (reached ??= new Error(
-                'This action reached a function that is not an internal operation.',
-              )),
-            // Its mutations take no second token from the bucket the check took one from.
-            { spent: paid },
-          )
-          const result = await spec.handler({ ...ctx, ...nested, actor } as never, input)
-          if (reached) {
-            console.error(
-              'Raw function reached from a public action; its writes are committed. Make it an internal operation.',
-              reached,
+            const result = await spec.handler(
+              { ...ctx, ...nested, actor, log: logOf(seen) } as never,
+              input,
             )
-            throw reached
-          }
-          return result
+            if (reached) {
+              console.error(
+                'Raw function reached from a public action; its writes are committed. Make it an internal operation.',
+                reached,
+              )
+              throw reached
+            }
+            return result
+          })
         },
       })
       // Not an operation for `defineTools`: an action is never a tool.
@@ -1533,26 +1587,33 @@ export function defineFunctions<
           }
           const input = (wrapped ?? plain) as ObjectType<Args>
           const actor: SystemActor = { kind: 'system', job: spec.name }
-          let tainted: unknown = null
-          const nested = nestedCalls(
-            ctx,
-            actor,
-            () => {},
-            () =>
-              (tainted ??= new Error(
-                'This job reached a function that is not an internal operation; nothing it did is kept.',
-              )),
-          )
-          const result = await spec.handler({ ...ctx, ...nested, actor } as never, input)
-          if (tainted) throw tainted
-          await lib(ctx).insert('activity', {
-            actor: { key: `system:${spec.name}`, kind: 'system', door: 'job', job: spec.name },
-            action: `job.${spec.name}`,
-            status: 'done',
-            result: storable(result as Value | undefined),
+          const seen = newSeen()
+          sawActor(seen, actor)
+          return observed(observe, 'mutation', `job.${spec.name}`, seen, async () => {
+            let tainted: unknown = null
+            const nested = nestedCalls(
+              ctx,
+              actor,
+              () => {},
+              () =>
+                (tainted ??= new Error(
+                  'This job reached a function that is not an internal operation; nothing it did is kept.',
+                )),
+            )
+            const result = await spec.handler(
+              { ...ctx, ...nested, actor, log: logOf(seen) } as never,
+              input,
+            )
+            if (tainted) throw tainted
+            await lib(ctx).insert('activity', {
+              actor: { key: `system:${spec.name}`, kind: 'system', door: 'job', job: spec.name },
+              action: `job.${spec.name}`,
+              status: 'done',
+              result: storable(result as Value | undefined),
+            })
+            // Called through ctx.run*, answer in the envelope that tells an internal operation from a raw function.
+            return who ? { operation: operationMark, result: null } : null
           })
-          // Called through ctx.run*, answer in the envelope that tells an internal operation from a raw function.
-          return who ? { operation: operationMark, result: null } : null
         },
       }),
       'job',

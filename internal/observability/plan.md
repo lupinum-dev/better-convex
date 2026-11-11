@@ -45,7 +45,7 @@ Checked with convex 1.43, a local backend, and evlog 2.35.1:
 Worktree: `better-convex-worktrees/observability`. Base: `origin/main` at `bf9c1eab5`.
 
 1. `obs/errors`: why/fix and request ID. **PR #361, open.**
-2. `obs/event`: the call event and `ctx.log.set`.
+2. `obs/event`: the call event and `ctx.log.set`. **Built 2026-11-11; PR open.**
 3. `obs/trace`: a trace through nested and scheduled operations.
 4. `obs/docs`: an operations page for log streams, with a PostHog recipe.
 
@@ -63,7 +63,7 @@ ConvexCallError.why / .fix / .requestId
 MCP tool failures carry `why` and `fix` in `structuredContent.error` and in the text. It works in SPA
 mode too: every browser call path uses `normalizeConvexError`; SSR only adds the payload round trip.
 
-## Layer 2 contract (draft, needs review before `obs/event` starts)
+## Layer 2 contract (built; D75)
 
 ```ts
 defineFunctions({ …, observe: true })   // off by default; true = one JSON console line per call
@@ -90,6 +90,11 @@ handler: (ctx) => { ctx.log.set({ document: { id } }) }
   "fields": { "document": { "id": "…" } }
 }
 ```
+
+As built: absent fields are left out (no `null`s); `code` only on an error; `written` only on a call
+that succeeded (a failed call keeps no writes); `trace` waits for layer 3. A job writes
+`action: "job.<name>"`; an internal action writes no `action` and only the actor's `kind` (its
+`ctx.run` calls write full events). `ctx.log.set` exists without `observe` and does nothing.
 
 - `actor` is the existing `actorRecord(actor)`, the shape `auditLog` already stores.
 - `outcome` is `ok` or `error`; readers filter by `code`.
@@ -124,7 +129,7 @@ Six scenarios, run in a consumer app every round, in the same order:
 | 0     | Contract                                                                                                                                                                   | Done; layer 2 part not reviewed yet                                           |
 | 1     | Layer 1 PR                                                                                                                                                                 | Done: #361, `pnpm verify` green locally (audit not run, no dependency change) |
 | 2     | Luis: upgrade from rc to 1.0.x/0.1.x in its own PR, then install #361's build (pinned by commit) on one branch; add why/fix to the failures a user can act on; screenshots | Done 2026-11-11; see "Round 2 results"                                        |
-| 3     | Layer 2; log stream on the Luis dev deployment; run the six scenarios                                                                                                      |                                                                               |
+| 3     | Layer 2; log stream on the Luis dev deployment; run the six scenarios                                                                                                      | Layer 2 built, `pnpm verify` green (3865 tests); log stream next              |
 | 4     | Layer 3                                                                                                                                                                    |                                                                               |
 | 5     | Layer 4 docs                                                                                                                                                               |                                                                               |
 | 6     | Release; production log streams after approval                                                                                                                             |                                                                               |
@@ -164,6 +169,12 @@ Findings:
   branch; they pass alone. Load, not the change.
 
 ## Open
+
+- Round 3 questions, answered only by a real log stream: does the line arrive and is it searchable in
+  PostHog; does a mutation retried after a write conflict write duplicate events; do Convex's own
+  events already link a scheduled job to its parent (then layer 3 shrinks). Decide layer 3 after.
+- Round 3 needs Matthias: a PostHog project (EU host) and its key, set as a log stream on the Luis dev
+  deployment in the Convex dashboard.
 
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
