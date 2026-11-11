@@ -45,7 +45,7 @@ Checked with convex 1.43, a local backend, and evlog 2.35.1:
 Worktree: `better-convex-worktrees/observability`. Base: `origin/main` at `bf9c1eab5`.
 
 1. `obs/errors`: why/fix and request ID. **PR #361, open.**
-2. `obs/event`: the call event and `ctx.log.set`.
+2. `obs/event`: the call event and `ctx.log.set`. **Built 2026-11-11; PR open.**
 3. `obs/trace`: a trace through nested and scheduled operations.
 4. `obs/docs`: an operations page for log streams, with a PostHog recipe.
 
@@ -63,7 +63,7 @@ ConvexCallError.why / .fix / .requestId
 MCP tool failures carry `why` and `fix` in `structuredContent.error` and in the text. It works in SPA
 mode too: every browser call path uses `normalizeConvexError`; SSR only adds the payload round trip.
 
-## Layer 2 contract (draft, needs review before `obs/event` starts)
+## Layer 2 contract (built; D75)
 
 ```ts
 defineFunctions({ …, observe: true })   // off by default; true = one JSON console line per call
@@ -90,6 +90,11 @@ handler: (ctx) => { ctx.log.set({ document: { id } }) }
   "fields": { "document": { "id": "…" } }
 }
 ```
+
+As built: absent fields are left out (no `null`s); `code` only on an error; `written` only on a call
+that succeeded (a failed call keeps no writes); `trace` waits for layer 3. A job writes
+`action: "job.<name>"`; an internal action writes no `action` and only the actor's `kind` (its
+`ctx.run` calls write full events). `ctx.log.set` exists without `observe` and does nothing.
 
 - `actor` is the existing `actorRecord(actor)`, the shape `auditLog` already stores.
 - `outcome` is `ok` or `error`; readers filter by `code`.
@@ -124,7 +129,7 @@ Six scenarios, run in a consumer app every round, in the same order:
 | 0     | Contract                                                                                                                                                                   | Done; layer 2 part not reviewed yet                                           |
 | 1     | Layer 1 PR                                                                                                                                                                 | Done: #361, `pnpm verify` green locally (audit not run, no dependency change) |
 | 2     | Luis: upgrade from rc to 1.0.x/0.1.x in its own PR, then install #361's build (pinned by commit) on one branch; add why/fix to the failures a user can act on; screenshots | Done 2026-11-11; see "Round 2 results"                                        |
-| 3     | Layer 2; log stream on the Luis dev deployment; run the six scenarios                                                                                                      |                                                                               |
+| 3     | Layer 2; log stream on the Luis dev deployment; run the six scenarios                                                                                                      | Layer 2 built, `pnpm verify` green (3865 tests); log stream next              |
 | 4     | Layer 3                                                                                                                                                                    |                                                                               |
 | 5     | Layer 4 docs                                                                                                                                                               |                                                                               |
 | 6     | Release; production log streams after approval                                                                                                                             |                                                                               |
@@ -163,8 +168,41 @@ Findings:
 - Two Nuxt component suites time out in their setup hook (10 s) under the full parallel run on the test
   branch; they pass alone. Load, not the change.
 
+## Round 3 results (Luis dev `next-narwhal-215`, 2026-11-11)
+
+- Dev had had no deploy since 2026-10-12 and still held the pre-cutover Better Auth rows, which the
+  current component rejects. With Matthias's OK, its 9 auth rows were deleted (user 1, session 4,
+  account 1, jwks 1, rateLimit 2), and the Luis test branch (9d4bbbe + a `schemaValidation: false`
+  commit for two fields removed in Luis #10) was pushed with Convex's own CLI
+  (`CONVEX_DEPLOYMENT=dev:next-narwhal-215`; the Better Convex CLI takes the deployment only from
+  `.env.local`, by design). PostHog Error Tracking and PostHog Logs are set on dev (Matthias).
+- Calls through `convex run` (no user): `clients:list` and `clients:create` wrote `NOT_SIGNED_IN`
+  events (request IDs `c80d6e0f0e0198a1`, `a3a8019629462870`); `crons:cleanupEmails` and
+  `billingAutomation:startDaily` wrote job events; the scheduled `sweep` and 8 `processContract` runs
+  each wrote a `billing.edit` event with actor `system:billing.startDaily`.
+- **Layer 3 is needed:** Convex's records do not link scheduled work to its parent
+  (`parentExecutionId: null`, `caller: "Scheduler"`, a new request ID per run). The handed-over actor
+  says who; only a trace ID says which call.
+- **PostHog Logs gets every event** (CSV export from Matthias, service `luis`): all 15 lines, under
+  the same `request_id` as Convex's `function_execution` record, which has the final status and the
+  error text. PostHog Error Tracking got exactly the two failures (matched to the millisecond), and
+  nothing for the jobs. No retry happened, so duplicate events after a write conflict stay unseen.
+- PostHog maps only `convex.topic`, `convex.function.path` and `convex.function.type` to attributes.
+  Our event is the `message` string inside the body, as Convex prints it: `'{"type":…}'`, with
+  Convex's quotes around a string argument. No form of `console.log` gives PostHog fields of its own,
+  so the line stays a JSON string (strip the outer quotes and it parses); full-text search finds
+  `better-convex.call`, codes and actor keys. Field queries are for the layer 4 recipe (PostHog SQL
+  on the body, not yet tried).
+- A mutation that calls another wrapped function writes one event per call under one request ID
+  (`processContract` and `billingCycles.js:materializeScheduled`).
+
 ## Open
 
+- Shown in Luis on a local backend (2026-11-11, test branch 9d4bbbe, functions from a local tarball of
+  d8597bd): each event sits in the same `convex logs --jsonl` record as Convex's own event, under one
+  request ID, and the crash's `Referenz` in the UI is that ID.
+
+- Round 3 answered (see results above). Next: layer 3, a trace ID through scheduled work.
 - Luis has two `fail` functions (the library's and one in `convex/documents/policy.ts` with app
   codes). Converge them later; the call event must record app codes meanwhile.
 - `why`/`fix` are server text in one language. A multilingual app maps `code` to its own text and

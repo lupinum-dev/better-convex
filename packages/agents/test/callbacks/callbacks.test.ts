@@ -103,11 +103,12 @@ async function followUps(s: Setup, input: Record<string, unknown> = {}) {
 // `ctx.actor`. Keys are listed sorted; nested objects list their keys, never values that vary.
 // `meta` and `vectorSearch` are convex-test's own context fields.
 
-const queryCtx = ['actor', 'auth', 'db', 'meta', 'runQuery', 'storage']
+const queryCtx = ['actor', 'auth', 'db', 'log', 'meta', 'runQuery', 'storage']
 const mutationCtx = [
   'actor',
   'auth',
   'db',
+  'log',
   'meta',
   'runMutation',
   'runQuery',
@@ -117,6 +118,7 @@ const mutationCtx = [
 const actionCtx = [
   'actor',
   'auth',
+  'log',
   'meta',
   'runAction',
   'runMutation',
@@ -284,7 +286,7 @@ const holds: Row[] = [
     row: 'approval summary, agent at the MCP door',
     run: (s) => s.tool('probe_ask', { orgId: s.orgId }),
     point: 'approval summary',
-    expected: { ctx: ['actor', 'auth', 'db', 'meta', 'storage'], db: readDb, ...mcpAgent },
+    expected: { ctx: ['actor', 'auth', 'db', 'log', 'meta', 'storage'], db: readDb, ...mcpAgent },
   },
   {
     row: 'mutation handler, agent acting under a person’s approval',
