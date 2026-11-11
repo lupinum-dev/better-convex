@@ -168,6 +168,24 @@ Findings:
 - Two Nuxt component suites time out in their setup hook (10 s) under the full parallel run on the test
   branch; they pass alone. Load, not the change.
 
+## Round 3 results (Luis dev `next-narwhal-215`, 2026-11-11)
+
+- Dev had had no deploy since 2026-10-12 and still held the pre-cutover Better Auth rows, which the
+  current component rejects. With Matthias's OK, its 9 auth rows were deleted (user 1, session 4,
+  account 1, jwks 1, rateLimit 2), and the Luis test branch (9d4bbbe + a `schemaValidation: false`
+  commit for two fields removed in Luis #10) was pushed with Convex's own CLI
+  (`CONVEX_DEPLOYMENT=dev:next-narwhal-215`; the Better Convex CLI takes the deployment only from
+  `.env.local`, by design). PostHog Error Tracking and PostHog Logs are set on dev (Matthias).
+- Calls through `convex run` (no user): `clients:list` and `clients:create` wrote `NOT_SIGNED_IN`
+  events (request IDs `c80d6e0f0e0198a1`, `a3a8019629462870`); `crons:cleanupEmails` and
+  `billingAutomation:startDaily` wrote job events; the scheduled `sweep` and 8 `processContract` runs
+  each wrote a `billing.edit` event with actor `system:billing.startDaily`.
+- **Layer 3 is needed:** Convex's records do not link scheduled work to its parent
+  (`parentExecutionId: null`, `caller: "Scheduler"`, a new request ID per run). The handed-over actor
+  says who; only a trace ID says which call.
+- Convex stores every line as `'{"type":…}'` (in quotes). Whether PostHog gets it quoted: to check
+  in PostHog.
+
 ## Open
 
 - Shown in Luis on a local backend (2026-11-11, test branch 9d4bbbe, functions from a local tarball of
