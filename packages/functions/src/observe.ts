@@ -35,6 +35,8 @@ export interface Seen {
   written?: ReadonlySet<string>
   /** Rows the calls it ran in its own transaction wrote: they write no event, so this one counts them. */
   innerWritten?: Set<string>
+  /** The trace this call belongs to: handed over by its caller, or made when it first starts other work. */
+  trace?: string
   readonly fields: Record<string, LogValue>
   /**
    * How a call that returned ended, when the work did not run: it waits for a person, a person
@@ -43,7 +45,22 @@ export interface Seen {
   outcome?: 'pending' | 'declined' | { code: string }
 }
 
-export const newSeen = (): Seen => ({ fields: {} })
+export const newSeen = (trace?: string): Seen => ({
+  ...(trace !== undefined && { trace }),
+  fields: {},
+})
+
+/**
+ * The trace ID of this call, made when it first hands work on. Convex gives scheduled work a new
+ * request ID and no link to the call that scheduled it, so the work carries this ID instead, and
+ * every event of the chain shows it. 16 hex digits, like a Convex request ID.
+ */
+export function traceOf(seen: Seen): string {
+  seen.trace ??= Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join(
+    '',
+  )
+  return seen.trace
+}
 
 export const logOf = (seen: Seen): CallLog => ({
   set: (fields) => {
@@ -124,6 +141,7 @@ export function callEvent(
     // A failed call keeps none of its writes, so only a call that did its work counts them.
     ...(outcome === 'ok' && kind !== 'query' && rows !== undefined && { written: rows }),
     ...(seen.approval !== undefined && { approval: seen.approval }),
+    ...(seen.trace !== undefined && { trace: seen.trace }),
     ...fieldsOf(seen),
   }
 }

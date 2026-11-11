@@ -54,6 +54,7 @@ import {
   sawActing,
   sawActor,
   tookFields,
+  traceOf,
   type CallLog,
   type CallKind,
   type Seen,
@@ -823,7 +824,7 @@ export function defineFunctions<
       collect?: (ids: string[]) => void
       /** Buckets this call chain already took a token from. */
       spent?: readonly string[]
-      /** This call's event: it counts the rows of the calls it runs in its own transaction. */
+      /** This call's event: it counts the rows of the calls it runs in its own transaction, and with `observe` every call it hands work to carries its trace. */
       seen?: Seen
     },
   ) {
@@ -853,6 +854,7 @@ export function defineFunctions<
             ...(mutation && collect && { nested: true }),
             ...(chain?.spent && chain.spent.length > 0 && { spent: [...chain.spent] }),
             ...(run && inner && { inner: true }),
+            ...(observe && chain?.seen && { trace: traceOf(chain.seen) }),
           }
     // Work an agent's call schedules is part of that call: it carries the `scheduled` mark, so it
     // runs after the turn moves on (#278). Work an approved request schedules while it runs also
@@ -1214,6 +1216,8 @@ export function defineFunctions<
     spent: v.optional(v.array(v.string())),
     /** Set by `ctx.run*` of a query or mutation with `observe`: the caller's event covers this call. */
     inner: v.optional(v.boolean()),
+    /** Set by `ctx.run*` and `ctx.scheduler` with `observe`: the trace of the call that handed this work on. */
+    trace: v.optional(v.string()),
   })
 
   /**
@@ -1269,9 +1273,10 @@ export function defineFunctions<
             actingAs: who,
             input,
             inner,
-          }: { actingAs: ActingAs; input: ObjectType<Args>; inner?: boolean },
+            trace,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; inner?: boolean; trace?: string },
         ) => {
-          const seen = newSeen()
+          const seen = newSeen(trace)
           return observed(observe && !inner, 'query', spec.action, seen, async () => {
             const { ctx: checked, settle } = await authorizeInternal(
               ctx,
@@ -1318,15 +1323,17 @@ export function defineFunctions<
             nested,
             spent,
             inner,
+            trace,
           }: {
             actingAs: ActingAs
             input: ObjectType<Args>
             nested?: boolean
             spent?: string[]
             inner?: boolean
+            trace?: string
           },
         ) => {
-          const seen = newSeen()
+          const seen = newSeen(trace)
           return observed(observe && !inner, 'mutation', spec.action, seen, async () => {
             const {
               ctx: checked,
@@ -1378,9 +1385,10 @@ export function defineFunctions<
             actingAs: who,
             input,
             spent,
-          }: { actingAs: ActingAs; input: ObjectType<Args>; spent?: string[] },
+            trace,
+          }: { actingAs: ActingAs; input: ObjectType<Args>; spent?: string[]; trace?: string },
         ) => {
-          const seen = newSeen()
+          const seen = newSeen(trace)
           sawActing(seen, who)
           // An internal action names no policy action; Convex's own event for the request has its path.
           return observed(observe, 'action', undefined, seen, async () => {
@@ -1396,7 +1404,7 @@ export function defineFunctions<
                   'This action reached a function that is not an internal operation.',
                 )),
               // The call that scheduled or ran this action paid these buckets: its saves do not pay again.
-              { spent: spent ?? [] },
+              { spent: spent ?? [], seen },
             )
             // An action cannot read the approved plan: under an approval, it deletes files through
             // an internal mutation, which can (release review 5).
@@ -1579,7 +1587,7 @@ export function defineFunctions<
                   'This action reached a function that is not an internal operation.',
                 )),
               // Its mutations take no second token from the bucket the check took one from.
-              { spent: paid },
+              { spent: paid, seen },
             )
             const result = await spec.handler(
               { ...ctx, ...nested, actor, log: logOf(seen) } as never,
@@ -1623,7 +1631,7 @@ export function defineFunctions<
       // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- a job may return nothing
     ) => Promise<Value | void>
   }) {
-    for (const reserved of ['actingAs', 'input', 'inner']) {
+    for (const reserved of ['actingAs', 'input', 'inner', 'trace']) {
       if (reserved in spec.args)
         throw new Error(`Job ${spec.name}: the argument name ${reserved} is reserved. Rename it.`)
     }
@@ -1641,6 +1649,7 @@ export function defineFunctions<
       actingAs: v.optional(actingAsValidator),
       input: v.optional(v.object(spec.args)),
       inner: v.optional(v.boolean()),
+      trace: v.optional(v.string()),
     }
     // A job runs as the system, by design: crons and the cleanup they schedule.
     return guarded(
@@ -1652,11 +1661,14 @@ export function defineFunctions<
             actingAs: who,
             input: wrapped,
             inner,
+            trace,
             ...plain
-          }: { actingAs?: ActingAs; input?: ObjectType<Args>; inner?: boolean } & Record<
-            string,
-            unknown
-          >,
+          }: {
+            actingAs?: ActingAs
+            input?: ObjectType<Args>
+            inner?: boolean
+            trace?: string
+          } & Record<string, unknown>,
         ) => {
           if (who !== undefined && who.kind !== 'system')
             throw new Error(
@@ -1669,7 +1681,7 @@ export function defineFunctions<
           }
           const input = (wrapped ?? plain) as ObjectType<Args>
           const actor: SystemActor = { kind: 'system', job: spec.name }
-          const seen = newSeen()
+          const seen = newSeen(trace)
           sawActor(seen, actor)
           return observed(observe && !inner, 'mutation', `job.${spec.name}`, seen, async () => {
             let tainted: unknown = null
