@@ -47,4 +47,5 @@ export {
   type Visitor,
   type SystemActor,
 } from './actor'
+export type { CallLog, LogValue } from './observe'
 export { oneLine } from './values'
