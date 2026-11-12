@@ -242,3 +242,7 @@ Findings:
   reindented code (C14-action-hands-over, S7-internal-action, C10-shown-operation), the review fix
   (S-A-audit-nested-no-row) and the trace chain (C14-action-one-token, #364). Find texts updated;
   each row passes locally, and all 443 rows match once on every branch.
+- Layer 5 (2026-11-12, `obs/showcase`): `starters/mcp-oauth-agent` turns on `observe`, sets the
+  project in the rename event, gives the name and rename-conflict refusals `why`/`fix`, and shows
+  message, why, fix and the request ID. The conflict text no longer carries the project name.
+  After the release, a PR pins the starters to functions/agents 0.2.0 and nuxt 1.1.0 (as #348).
