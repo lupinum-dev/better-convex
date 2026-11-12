@@ -46,6 +46,9 @@ export const fns = defineFunctions({
     memberships: { delete: 'userId' },
     projects: { keep: 'Projects belong to the organization; createdBy is not shown anywhere.' },
   },
+  // One JSON console line per call: who did which action, in which organization, with which result
+  // and code. A Convex log stream sends the lines to your log service. IDs and codes only.
+  observe: true,
 })
 
 export const { query, mutation } = fns
