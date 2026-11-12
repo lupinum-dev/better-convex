@@ -51,6 +51,11 @@ header.row h1 {
   align-items: center;
   margin: 0;
 }
+/* Why, how to fix it and the reference: one line each under the message. */
+.problem small {
+  display: block;
+  margin-top: 0.2rem;
+}
 ul {
   list-style: none;
   margin: 0;
