@@ -12,7 +12,7 @@ import { tools } from './agents'
 import { initConvexTest } from './test.setup'
 
 const adapter = components.betterAuth.adapter
-const { agents, connections } = api
+const { agents, connections, projects } = api
 const grantScopes = ['mcp:read', 'mcp:write']
 
 type Test = ReturnType<typeof initConvexTest>
@@ -109,6 +109,25 @@ describe('MCP starter authorization', () => {
     await tool('search_projects', { organizationId })
     await revoke(context)
     await expect(failure(tool('search_projects', { organizationId }))).resolves.toBe(expected)
+  })
+
+  // Catches: a crossed rename that overwrites the other person's name, or an error text that
+  // carries a project name into the logs.
+  it('refuses a rename that crossed another, says what to do, and names no project', async () => {
+    const { session, projectId, test } = await setup()
+    await expect(
+      session.mutation(projects.rename, { projectId, name: 'Plan', from: 'Old plan' }),
+    ).rejects.toMatchObject({
+      data: {
+        code: 'CONFLICT',
+        message: 'Someone renamed this project since you last saw it.',
+        why: 'Nothing changed, so their name is kept.',
+        fix: 'Read the project again, check that your new name still fits, then rename it.',
+      },
+    })
+    await expect(test.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({
+      name: 'Roadmap',
+    })
   })
 
   it('cancels the open requests of a host the person disconnects', async () => {

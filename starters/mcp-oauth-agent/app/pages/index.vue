@@ -57,19 +57,6 @@ const approve = useConvexMutation(api.agents.approve)
 const decline = useConvexMutation(api.agents.decline)
 const disconnect = useConvexMutation(api.connections.revoke)
 
-const codeOf = (error: unknown) => {
-  const e = error as { code?: unknown; data?: { code?: unknown } } | undefined
-  return typeof e?.code === 'string'
-    ? e.code
-    : typeof e?.data?.code === 'string'
-      ? e.data.code
-      : undefined
-}
-const messageOf = (error: unknown) => {
-  const data = (error as { data?: { message?: unknown } } | undefined)?.data
-  return typeof data?.message === 'string' ? data.message : 'That did not work. Try again.'
-}
-
 // Every action reports its failure here, so a failed click never looks like success.
 const actions = [create, archive, approve, decline, disconnect]
 const failed = computed(() => actions.map((action) => action.error.value).find(Boolean))
@@ -79,7 +66,7 @@ function act<A>(action: { mutate: (args: A) => Promise<unknown> }, args: A) {
 
 // The account can stop working while the page is open: signed out elsewhere, or suspended.
 const accountProblem = computed(() => {
-  const code = codeOf(organizations.error.value)
+  const code = organizations.error.value?.code
   if (code === 'ACCOUNT_DISABLED')
     return 'This account cannot use the app right now. Ask an owner of your organization.'
   if (code === 'NOT_SIGNED_IN') return 'Your session ended. Sign in again to continue.'
@@ -213,8 +200,15 @@ const activityLabel = {
         <button type="button" class="secondary" @click="client.signOut()">Sign out</button>
       </header>
 
+      <!-- A refusal shows the server's text, why and how to fix it; any failure, the reference a
+           person can quote, which is the request ID in the Convex logs. -->
       <p v-if="failed" class="card problem" role="alert">
-        <span>{{ messageOf(failed) }}</span>
+        <span class="text"
+          >{{ failed.kind === 'server' ? failed.message : 'That did not work. Try again.' }}
+          <small v-if="failed.why">{{ failed.why }}</small>
+          <small v-if="failed.fix">{{ failed.fix }}</small>
+          <small v-if="failed.requestId" class="muted">Reference: {{ failed.requestId }}</small>
+        </span>
         <button
           type="button"
           class="secondary"
