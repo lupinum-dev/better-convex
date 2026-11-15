@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { inspect } from 'node:util'
 
 import { makeFunctionReference, type FunctionReference } from 'convex/server'
@@ -671,5 +673,123 @@ describe('serverConvex configured bounds and error context', () => {
     })
 
     await expect(caller.query(queryRef, {})).rejects.toBe(violation)
+  })
+})
+
+describe('serverConvex fetch', () => {
+  /** Real loopback servers: the redirect and size checks need a real fetch. */
+  async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void) {
+    const server = createServer(handler)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    return { origin: `http://127.0.0.1:${port}`, close: () => server.close() }
+  }
+
+  function signedIn() {
+    mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
+    return serverConvex(webServerEvent({ cookie: AUTH_COOKIE }), { auth: 'required' })
+  }
+
+  // Catches: a caller-chosen URL that sends the user's token to another host.
+  it.each([
+    'https://evil.example/files/a',
+    'HTTPS://evil.example/files/a',
+    '//evil.example/files/a',
+    '/\\evil.example/files/a',
+    '\\\\evil.example/files/a',
+    '/\t/evil.example/files/a',
+    '/\n/evil.example/files/a',
+    '/files/a b',
+    '/files/a#fragment',
+    'files/a',
+    '',
+    42,
+  ])('refuses the path %j before it reads the session or sends a request', async (path) => {
+    const upstream = vi.fn()
+    vi.stubGlobal('fetch', upstream)
+    await expect(signedIn().fetch(path as string)).rejects.toBeInstanceOf(
+      ServerConvexValidationError,
+    )
+    expect(mocks.exchangeMock).not.toHaveBeenCalled()
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
+  // Catches: fetch turning into a general bridge that writes through HTTP actions.
+  it.each(['POST', 'PUT', 'DELETE', 'get'])('refuses the method %s', async (method) => {
+    const upstream = vi.fn()
+    vi.stubGlobal('fetch', upstream)
+    await expect(signedIn().fetch('/files/a', { method: method as 'GET' })).rejects.toBeInstanceOf(
+      ServerConvexValidationError,
+    )
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
+  // Catches: a required download answered anonymously when the request has no session.
+  it('rejects without a session when auth is required, and sends nothing', async () => {
+    const upstream = vi.fn()
+    vi.stubGlobal('fetch', upstream)
+    await expect(
+      serverConvex(webServerEvent({}), { auth: 'required' }).fetch('/files/a'),
+    ).rejects.toMatchObject({ kind: 'authentication', code: 'UNAUTHENTICATED' })
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
+  it('sends the token to the HTTP actions host and aborts with the request', async () => {
+    const request = new AbortController()
+    const upstream = vi.fn(async () => new Response('file'))
+    vi.stubGlobal('fetch', upstream)
+    mocks.exchangeMock.mockResolvedValue({ token: USER_JWT, status: 200, error: null })
+    const caller = serverConvex(
+      webServerEvent({ cookie: AUTH_COOKIE }, undefined, { signal: request.signal }),
+      { auth: 'required' },
+    )
+    const response = await caller.fetch('/files/a?download=1', { method: 'HEAD' })
+    expect(await response.text()).toBe('file')
+    const [url, init] = upstream.mock.calls[0] as unknown as [URL, RequestInit]
+    expect(String(url)).toBe(`${SITE_URL}/files/a?download=1`)
+    expect(init).toMatchObject({
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${USER_JWT}` },
+      redirect: 'manual',
+    })
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    request.abort()
+    expect(init.signal?.aborted).toBe(true)
+  })
+
+  // Catches: a redirect from the HTTP action carrying the token to the redirect target.
+  it('returns a redirect instead of following it, so the token stays on the deployment', async () => {
+    const seen: (string | undefined)[] = []
+    const target = await listen((request, response) => {
+      seen.push(request.headers.authorization)
+      response.end('elsewhere')
+    })
+    const deployment = await listen((_request, response) => {
+      response.writeHead(302, { location: `${target.origin}/steal` }).end()
+    })
+    try {
+      setConfig({ url: CONVEX_URL, siteUrl: deployment.origin, auth: AUTH_CONFIG })
+      const response = await signedIn().fetch('/files/a')
+      expect(response.status).toBe(302)
+      expect(seen).toEqual([])
+    } finally {
+      target.close()
+      deployment.close()
+    }
+  })
+
+  // Catches: the 1 MiB server call cap applied to file downloads.
+  it('streams a body larger than the server call response cap', async () => {
+    const size = 2 * 1024 * 1024
+    const deployment = await listen((_request, response) => {
+      response.end(Buffer.alloc(size, 1))
+    })
+    try {
+      setConfig({ url: CONVEX_URL, siteUrl: deployment.origin, auth: AUTH_CONFIG })
+      const response = await signedIn().fetch('/files/a')
+      expect((await response.arrayBuffer()).byteLength).toBe(size)
+    } finally {
+      deployment.close()
+    }
   })
 })
