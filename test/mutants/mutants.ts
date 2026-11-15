@@ -2176,6 +2176,43 @@ export const mutants: Mutant[] = [
     ],
     projects: ['unit'],
   },
+  // One address cannot create guest users without bound, and does not use up other addresses' budget.
+  {
+    id: 'P-guest-sign-in-limit',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/guest-sign-in-limit.ts',
+    find: 'if (decision.allowed) return',
+    replace: 'return',
+    kills: [
+      'test/convex/auth-anonymous.test.ts > refuses the next guest sign-in from one IPv4 address and not from another',
+      'test/convex/auth-anonymous.test.ts > refuses the next guest sign-in from one IPv6 /64 network and not from another',
+    ],
+    projects: ['convex'],
+  },
+  {
+    id: 'P-guest-sign-in-limit-per-address',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/guest-sign-in-limit.ts',
+    find: '`guest-sign-in:${address}`',
+    replace: "'guest-sign-in'",
+    kills: [
+      'test/convex/auth-anonymous.test.ts > refuses the next guest sign-in from one IPv4 address and not from another',
+      'test/convex/auth-anonymous.test.ts > refuses the next guest sign-in from one IPv6 /64 network and not from another',
+    ],
+    projects: ['convex'],
+  },
+  {
+    id: 'P-guest-sign-in-limit-ipv6-subnet',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/guest-sign-in-limit.ts',
+    find: "verified ? normalizeIP(verified, { ipv6Subnet: 64 }) : 'unknown'",
+    replace: "verified || 'unknown'",
+    kills: [
+      'test/convex/auth-anonymous.test.ts > refuses the next guest sign-in from one IPv6 /64 network and not from another',
+    ],
+    projects: ['convex'],
+  },
+
   // The renewal cookie of a server token exchange reaches the browser.
   {
     id: 'P-session-ssr-renewal-cookie',
