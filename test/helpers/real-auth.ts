@@ -6,7 +6,13 @@
  * that loads Better Auth: it switches the host to production first.
  */
 import { convexTest } from 'convex-test'
-import { componentsGeneric, defineSchema, httpRouter } from 'convex/server'
+import {
+  componentsGeneric,
+  defineSchema,
+  type GenericSchema,
+  httpRouter,
+  type SchemaDefinition,
+} from 'convex/server'
 import { afterAll, afterEach, beforeEach, vi } from 'vitest'
 
 import type { ComponentApi } from '../../src/runtime/convex-auth/component/_generated/component'
@@ -82,6 +88,9 @@ export function freshIp() {
   return `198.51.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`
 }
 
+type AppSchema = SchemaDefinition<GenericSchema, boolean>
+const emptyRootSchema = defineSchema({})
+
 export type RealAuthOptions = Omit<CreateBetterConvexAuthOptions<never>, 'email'>
 
 export interface RealAuthSetup {
@@ -89,6 +98,8 @@ export interface RealAuthSetup {
   component?: keyof typeof componentSchemas
   /** Leave out the email sender, to test the factory's own fallback. */
   email?: false
+  /** Application tables and functions, for tests that call app code next to the routes. */
+  root?: { schema: AppSchema; modules: Record<string, () => Promise<unknown>> }
 }
 
 export interface AuthResponse {
@@ -100,7 +111,11 @@ export interface AuthResponse {
 
 export function createRealAuth(options: RealAuthOptions, setup: RealAuthSetup = {}) {
   const [schema, modules] = componentSchemas[setup.component ?? 'default']
-  const test = convexTest(defineSchema({}), rootModules)
+  // Typed as the empty root: tests call app functions by name.
+  const test = convexTest(
+    (setup.root?.schema ?? emptyRootSchema) as typeof emptyRootSchema,
+    setup.root?.modules ?? rootModules,
+  )
   test.registerComponent('sessionAuth', schema, modules)
   const mails: BetterConvexAuthEmail[] = []
   const auth = createBetterConvexAuth(authComponent, {

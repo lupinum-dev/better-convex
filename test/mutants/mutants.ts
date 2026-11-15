@@ -2978,6 +2978,21 @@ export const mutants: Mutant[] = [
     ],
     projects: ['functions'],
   },
+  // auth.deleteUser and Better Auth's /delete-user delete the user row with the app's onDelete
+  // trigger handle, so a user projection erases the app user.
+  {
+    id: 'P-delete-user-runs-trigger',
+    guards: 'session',
+    file: 'src/runtime/convex-auth/adapter/create-adapter.ts',
+    find: "await ctx.runMutation(component.adapter.deleteOne, {\n            model,\n            where: toComponentWhere(where)!,\n            onDeleteHandle: await relationshipTriggerHandle('onDelete'),",
+    replace:
+      'await ctx.runMutation(component.adapter.deleteOne, {\n            model,\n            where: toComponentWhere(where)!,\n            onDeleteHandle: undefined,',
+    kills: [
+      'test/convex/auth-delete-user.test.ts > account deletion with real Better Auth > deleteThroughHelper deletes the user and runs the onDelete trigger: mutation true',
+      'test/convex/auth-delete-user.test.ts > account deletion with real Better Auth > deleteThroughHelperAction deletes the user and runs the onDelete trigger: action true',
+    ],
+    projects: ['convex'],
+  },
   {
     id: 'P-dev-outbox-loopback-only',
     guards: 'with an email hook, the dev outbox logs codes only on a loopback SITE_URL',
