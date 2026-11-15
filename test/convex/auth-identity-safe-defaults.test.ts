@@ -237,6 +237,36 @@ describe('safe auth defaults', () => {
   })
 })
 
+describe('dev outbox with an email hook', () => {
+  useAuthEnvironment()
+
+  it.each([
+    ['logs and runs the hook on a loopback SITE_URL', 'http://localhost:3000', {}, true],
+    ['only runs the hook on a public SITE_URL', 'https://app.example.test', {}, false],
+    [
+      'only runs the hook when siteOrigins lists other origins',
+      'http://localhost:3000',
+      { siteOrigins: ['https://app.example.test'] },
+      false,
+    ],
+  ])('%s', async (_name, siteUrl, extra, logs) => {
+    vi.stubEnv('SITE_URL', siteUrl)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const s = createRealAuth({ emailOTP: {}, ...extra })
+    await s.client().post('/email-otp/send-verification-otp', { email: VICTIM, type: 'sign-in' })
+    const mail = s.lastMail('email-otp', VICTIM)
+    expect(mail?.type === 'email-otp' && /^\d+$/.test(mail.otp)).toBe(true)
+    const otp = mail?.type === 'email-otp' ? mail.otp : ''
+    const logged = log.mock.calls
+      .flat()
+      .map(String)
+      .filter((line) => line.includes(otp))
+    expect(logged).toEqual(
+      logs ? [`[better-convex-nuxt dev outbox] email-otp to ${VICTIM}: code ${otp}`] : [],
+    )
+  })
+})
+
 describe('auth email without an email hook', () => {
   useAuthEnvironment()
 

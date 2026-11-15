@@ -2944,6 +2944,18 @@ export const mutants: Mutant[] = [
     projects: ['functions'],
   },
   {
+    id: 'P-dev-outbox-loopback-only',
+    guards: 'with an email hook, the dev outbox logs codes only on a loopback SITE_URL',
+    file: 'src/runtime/convex-auth/create-better-convex-auth.ts',
+    find: 'const deliver = localDevelopment',
+    replace: 'const deliver = true',
+    kills: [
+      'test/convex/auth-identity-safe-defaults.test.ts > dev outbox with an email hook > only runs the hook on a public SITE_URL',
+      'test/convex/auth-identity-safe-defaults.test.ts > dev outbox with an email hook > only runs the hook when siteOrigins lists other origins',
+    ],
+    projects: ['convex'],
+  },
+  {
     id: 'S-B-delete-user-default-off',
     guards: 'deleteUser stays off unless the app enables it',
     file: 'src/runtime/convex-auth/create-better-convex-auth.ts',
