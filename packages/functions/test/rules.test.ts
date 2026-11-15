@@ -67,6 +67,15 @@ test('writes check the row tenant and the role there', async () => {
   ])
 })
 
+// Catches: a mutation without `plan` failing on an int64 argument, or bytes shown as `{}`.
+test('the default plan summary writes int64 and bytes arguments as Convex JSON', async () => {
+  const { ann, pa } = await setup()
+  const stamp = new Uint8Array([1, 2]).buffer
+  expect(await ann.mutation(fn('copyProject'), { id: pa, copies: 3n, stamp })).toBe(
+    `projects.archive {"copies":{"$integer":"AwAAAAAAAAA="},"id":"${pa}","stamp":{"$bytes":"AQI="}}`,
+  )
+})
+
 // Catches: the owner rule letting one person read another's rows.
 test('owner rows of other people fail the query', async () => {
   const { ann } = await setup()

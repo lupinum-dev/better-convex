@@ -111,6 +111,14 @@ export const createInOrg = mutation({
   },
 })
 
+/** No `plan`, and args JSON cannot hold: the default summary must still be written. */
+export const copyProject = mutation({
+  action: 'projects.archive',
+  args: { id: v.id('projects'), copies: v.int64(), stamp: v.bytes() },
+  returns: v.string(),
+  handler: (_ctx, _args, plan) => plan.summary,
+})
+
 /** Reads every membership: other people's included. */
 // Every user row: `users: owner('_id')`, so another person's row fails the query.
 export const allUsers = query({

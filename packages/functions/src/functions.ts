@@ -23,6 +23,7 @@ import {
   type TableNamesInDataModel,
 } from 'convex/server'
 import {
+  convexToJson,
   v,
   type GenericId,
   type Infer,
@@ -131,7 +132,14 @@ export async function planOf(
     idsIn(jsonOf(v.object(op.args)), input)
       .filter(({ table, id }) => !table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
       .map(({ id }) => id)
-  if (!op.plan) return { summary: `${op.action} ${JSON.stringify(input)}`, rows: named() }
+  // Convex's own JSON form: plain JSON cannot hold an int64 (it throws) or bytes (it writes `{}`).
+  // The input passed the args validator, so it is a Convex value.
+  if (!op.plan) {
+    return {
+      summary: `${op.action} ${JSON.stringify(convexToJson(input as Value))}`,
+      rows: named(),
+    }
+  }
   const plan = (await op.plan(planReader(ctx), frozen(input))) as unknown
   if (
     !plan ||
