@@ -2,6 +2,7 @@ import { toolFailure } from '@lupinum/better-convex-agents/internal'
 import { handleMcpRequest, type HandleMcpRequestOptions } from '@lupinum/better-convex-agents/mcp'
 import { grantMcp } from '@lupinum/better-convex-nuxt/better-auth/test'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { ConvexError } from 'convex/values'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { z } from 'zod'
 
@@ -467,3 +468,10 @@ test.each(['2026-07-28', '2025-06-18'] as const)(
     await client.close()
   },
 )
+
+// NOT_FOUND must read like a missing row and FAILED keeps its detail in the log: help on them, from
+// a cast `fail` or a dependency's ConvexError, must not reach an agent.
+test.each([['NOT_FOUND'], ['FAILED']])('help on %s never reaches an agent', (code) => {
+  const error = new ConvexError({ code, message: 'm', why: 'the row exists', fix: 'ask its owner' })
+  expect(toolFailure(error)).toEqual({ code, message: 'm' })
+})

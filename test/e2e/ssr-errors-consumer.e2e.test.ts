@@ -24,6 +24,10 @@ const MOCK_PORT = 4988
 const NUXT_PORT = 4611
 const SENTINEL_SECRET = 'ssr-errors-consumer-sentinel-8f21c6ad'
 const PUBLIC_APPLICATION_MESSAGE = 'Archived projects cannot be edited'
+const WHY = 'The project was archived, so it is read-only.'
+const FIX = 'Restore the project first.'
+// Convex puts the request ID in front of the error text; it is the only part of that text kept.
+const REQUEST_ID = '5a1c0ffee0ddba11'
 
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0
@@ -66,11 +70,13 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
         res.end(
           JSON.stringify({
             status: 'error',
-            errorMessage: `Uncaught ConvexError: ${SENTINEL_SECRET}; request=${body}\n    at handler (../convex/private.ts:42:11)`,
+            errorMessage: `[Request ID: ${REQUEST_ID}] Server Error\nUncaught ConvexError: ${SENTINEL_SECRET}; request=${body}\n    at handler (../convex/private.ts:42:11)`,
             errorData: convexToJson({
               code: 'PROJECT_ARCHIVED',
               status: 409,
               message: PUBLIC_APPLICATION_MESSAGE,
+              why: WHY,
+              fix: FIX,
             }),
           }),
         )
@@ -163,7 +169,13 @@ describe('real SSR ConvexCallError revival and redaction', async () => {
       code: 'PROJECT_ARCHIVED',
       status: 409,
       message: PUBLIC_APPLICATION_MESSAGE,
+      why: WHY,
+      fix: FIX,
     })
+    // why, fix and the request ID survive SSR -> payload -> hydration.
+    expect(revived.why).toBe(WHY)
+    expect(revived.fix).toBe(FIX)
+    expect(revived.requestId).toBe(REQUEST_ID)
     // cause never survives the payload round-trip
     expect(revived.causeIsUndefined).toBe(true)
     // JSON.stringify(error) on the REVIVED client instance is clean too.

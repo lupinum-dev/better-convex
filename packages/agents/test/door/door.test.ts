@@ -313,6 +313,30 @@ test.each([
   })
 })
 
+// An app's why and fix reached web callers but not agents: the MCP door must pass them on, in the
+// structured error and in the text that hosts without structured content show.
+test("the app's why and fix reach the agent", async () => {
+  const { call, a } = await setup()
+  const { body } = await call('ann:write', 'create_project', { orgId: a, name: ' ' })
+  expect(body.result).toEqual({
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text: 'Use 1 to 100 characters. A project name is shown in lists and must fit there. Give the project a name of 1 to 100 characters.',
+      },
+    ],
+    structuredContent: {
+      error: {
+        code: 'INVALID_INPUT',
+        message: 'Use 1 to 100 characters.',
+        why: 'A project name is shown in lists and must fit there.',
+        fix: 'Give the project a name of 1 to 100 characters.',
+      },
+    },
+  })
+})
+
 // E8: null for an optional field failed; every JSON shape must reach the handler.
 test('every JSON shape reaches the handler, and null means "left out"', async () => {
   const { call, pa } = await setup()

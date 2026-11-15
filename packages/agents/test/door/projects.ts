@@ -13,7 +13,11 @@ export const create = mutation({
   tool: { name: 'create_project', description: 'Create one project.' },
   handler: async (ctx, { orgId, name }) => {
     const trimmed = name.trim()
-    if (!trimmed || trimmed.length > 100) fail('INVALID_INPUT', 'Use 1 to 100 characters.')
+    if (!trimmed || trimmed.length > 100)
+      fail('INVALID_INPUT', 'Use 1 to 100 characters.', {
+        why: 'A project name is shown in lists and must fit there.',
+        fix: 'Give the project a name of 1 to 100 characters.',
+      })
     const id = await ctx.db.insert('projects', { orgId, name: trimmed, status: 'active' })
     return { id, name: trimmed }
   },
