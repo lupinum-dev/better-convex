@@ -250,6 +250,51 @@ it('tells beforeUserCreate whether the new user is a guest', async () => {
   expect(seen).toEqual([true, false])
 })
 
+// Catches: one address creating guest users without bound (each a user row and a session),
+// or a limit that one busy address uses up for every other visitor.
+it.each([
+  ['IPv4 address', ['198.51.100.1', '198.51.100.1', '198.51.100.1'], '198.51.100.2'],
+  // One connection owns a whole /64, so the limit counts the network, as Better Auth's own limits do.
+  [
+    'IPv6 /64 network',
+    ['2001:db8:1:2::1', '2001:db8:1:2::2', '2001:db8:1:2:ffff::3'],
+    '2001:db8:1:3::1',
+  ],
+])(
+  'refuses the next guest sign-in from one %s and not from another',
+  async (_kind, same, other) => {
+    const { client } = setup({
+      experimental: { anonymous: { rateLimit: { window: 3600, max: 2 } } },
+    })
+    const from = (ip: string) => ({ fetchOptions: { headers: { 'x-bcn-verified-client-ip': ip } } })
+    for (const ip of same.slice(0, 2)) {
+      expect((await client.signIn.anonymous(from(ip))).error).toBeNull()
+      await client.signOut()
+    }
+    // Better Auth's own /sign-in* limit allows 3 requests in 10 seconds, so this refusal is ours.
+    const refused = await client.signIn.anonymous(from(same[2]!))
+    expect(refused.error?.status).toBe(429)
+    expect((await client.signIn.anonymous(from(other))).error).toBeNull()
+  },
+)
+
+it.each([
+  { window: 59, max: 10 },
+  { window: 86_401, max: 10 },
+  { window: 3600, max: 0 },
+  { window: 3600, max: 1001 },
+  { window: 3600, max: 2.5 },
+  { window: '3600', max: 10 },
+  { window: 3600 },
+  { window: 3600, max: 10, extra: true },
+])('rejects the guest sign-in limit %j', (rateLimit) => {
+  expect(() =>
+    createBetterConvexAuth(component, {
+      experimental: { anonymous: { rateLimit } },
+    } as unknown as CreateBetterConvexAuthOptions<GenericDataModel>),
+  ).toThrow(/experimental\.anonymous\.rateLimit/)
+})
+
 it('rejects anonymous linking before two-factor verification can authenticate the new account', () => {
   expect(() =>
     createBetterConvexAuth(component, {

@@ -43,6 +43,12 @@ import {
 } from './diagnostics'
 import { createEmailCodeAddressLimitPlugin } from './email-code-limit'
 import {
+  createGuestSignInLimitPlugin,
+  GUEST_SIGN_IN_LIMIT_BOUNDS,
+  GUEST_SIGN_IN_LIMIT_DEFAULT,
+  type GuestSignInLimit,
+} from './guest-sign-in-limit'
+import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
   createRevokeEarlierSessionsHooks,
@@ -157,7 +163,15 @@ type ReviewedAnonymousOptions = Pick<
   | 'disableDeleteAnonymousUser'
   | 'generateName'
   | 'generateRandomEmail'
->
+> & {
+  /**
+   * New guests per verified client address: a burst of `max`, then one more
+   * every `window / max` seconds (a bucket that refills, not a fixed window).
+   * Default `{ window: 3600, max: 10 }`: 10 at once, then one every 6 minutes.
+   * `window` is 60 to 86,400 seconds, `max` is 1 to 1,000.
+   */
+  readonly rateLimit?: GuestSignInLimit
+}
 
 const reviewedEmailOtpOptionKeys = [
   'allowedAttempts',
@@ -813,9 +827,11 @@ function rejectUnsupportedOptions(options: object): ResolvedOidcConfig | undefin
           'disableDeleteAnonymousUser',
           'generateName',
           'generateRandomEmail',
+          'rateLimit',
         ],
         'experimental.anonymous',
       )
+      if (guest.rateLimit !== undefined) assertGuestSignInLimit(guest.rateLimit)
       for (const key of ['onLinkAccount', 'generateName', 'generateRandomEmail']) {
         if (guest[key] !== undefined && typeof guest[key] !== 'function')
           throw configError(`expected "experimental.anonymous.${key}" to be a function`)
@@ -1010,6 +1026,22 @@ function oidcSignInHook<DataModel extends GenericDataModel>(
       userId,
       claims: claims as BetterConvexOidcClaims,
     })
+  }
+}
+
+function assertGuestSignInLimit(value: unknown): void {
+  if (!isPlainRecord(value)) {
+    throw configError('expected "experimental.anonymous.rateLimit" to be { window, max }')
+  }
+  assertOnlyKeys(value, ['window', 'max'], 'experimental.anonymous.rateLimit')
+  for (const key of ['window', 'max'] as const) {
+    const { min, max } = GUEST_SIGN_IN_LIMIT_BOUNDS[key]
+    const field = value[key]
+    if (!Number.isSafeInteger(field) || (field as number) < min || (field as number) > max) {
+      throw configError(
+        `expected "experimental.anonymous.rateLimit.${key}" to be a whole number from ${min} to ${max}`,
+      )
+    }
   }
 }
 
@@ -1366,8 +1398,13 @@ export function createBetterConvexAuthOwned<
         ? createBeforeUserCreateHook(ctx, options.beforeUserCreate)
         : undefined
       const guestOptions = options.experimental?.anonymous
+      const { rateLimit: guestLimit = GUEST_SIGN_IN_LIMIT_DEFAULT, ...anonymousOptions } =
+        guestOptions === undefined || guestOptions === true ? {} : guestOptions
       const featurePlugins = [
-        guestOptions === undefined ? null : anonymous(guestOptions === true ? {} : guestOptions),
+        guestOptions === undefined ? null : anonymous(anonymousOptions),
+        guestOptions === undefined
+          ? null
+          : createGuestSignInLimitPlugin(guestLimit, () => rateLimitStorage.consume),
         options.organization === false || options.organization === undefined
           ? null
           : organization({
