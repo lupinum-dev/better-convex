@@ -145,6 +145,10 @@ const focus = {
         ['/docs/build/functions/testing', '/docs/build/functions/cost'],
       ],
       ['Know what is and is not protected', ['/docs/build/functions/threat-model']],
+      [
+        'Limit calls, audit changes and send call events to a log service',
+        ['/docs/build/functions/limits-and-audit'],
+      ],
       ['Handle an error code', ['/docs/reference/operation-error-codes']],
     ],
     rules: [

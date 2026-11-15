@@ -16,6 +16,7 @@ import {
   fingerprint,
   frozen,
   guarded,
+  handedFields,
   markHousekeeping,
   markTools,
   idsIn,
@@ -23,11 +24,14 @@ import {
   isIdOf,
   jsonOf,
   internalsOf,
+  newSeen,
   OPERATION,
   planOf,
+  sawActor,
   scopesFor,
   statedAgentRule,
   storable,
+  tookFields,
   takeToken,
   toJsonSchema,
   toolNamePattern,
@@ -36,6 +40,7 @@ import {
   type LibraryDataModel,
   type Operation,
   type Plan,
+  type Seen,
   type ToolSpec,
   readOnly,
   uploadClaimMs,
@@ -83,6 +88,8 @@ interface Internals {
     op: Pick<Operation, 'action' | 'args'>,
     actor: Actor<{ _id: string }>,
     input: Record<string, unknown>,
+    /** What the call's event knows: the check adds the actor, the tenant and the rows written. */
+    event?: Seen,
   ): Promise<{
     decision: 'allow' | 'approve'
     tenant: TenantRef | undefined
@@ -91,6 +98,8 @@ interface Internals {
     /** Writes the audit row of this call, when the policy audits its action. */
     record(): Promise<void>
     mayWrite(table: string, row: Record<string, unknown>): Promise<boolean>
+    /** The rows this call wrote through its checked `db`. */
+    written: ReadonlySet<string>
     ctx: any
   }>
   lib(ctx: { db: unknown }): Lib
@@ -101,6 +110,17 @@ interface Internals {
     tableOf(db: unknown, id: string): string | undefined
   }
   roleOf(ctx: Ctx, user: { _id: string }, tenant: TenantRef): Promise<string | null>
+  /**
+   * Runs one call and writes its event with `observe`, as `defineFunctions` does. An `inner`
+   * call runs in its caller's transaction, whose event covers it.
+   */
+  observed<T>(
+    kind: 'query' | 'mutation',
+    action: string,
+    event: Seen,
+    run: () => Promise<T>,
+    inner?: boolean,
+  ): Promise<T>
 }
 
 /** One tool as a door publishes it. */
@@ -283,7 +303,18 @@ export function defineTools(
   },
 ) {
   const { policy } = fns
-  const { person, agent, authorize, lib, tenants, roleOf } = internalsOf(fns) as Internals
+  const { person, agent, authorize, lib, tenants, roleOf, observed } = internalsOf(fns) as Internals
+  /** A handler with its call event: `event` collects what the event shows. */
+  const withEvent =
+    <C, A, R>(
+      kind: 'query' | 'mutation',
+      action: string,
+      handler: (ctx: C, args: A, event: Seen) => Promise<R>,
+    ) =>
+    (ctx: C, args: A) => {
+      const event = newSeen()
+      return observed(kind, action, event, () => handler(ctx, args, event))
+    }
   const ownRef = (name: string) => options.functions[name] as FunctionReference<any, 'internal'>
 
   const operations = new Map<string, ToolOp>()
@@ -392,28 +423,32 @@ export function defineTools(
             ctx: Ctx,
             { caller, input: raw }: { caller: AgentCaller; input: unknown },
           ) => {
-            const actor = await agent(ctx, caller)
-            const checkedInput = inputOf(ctx, { args: toolArgs(op) }, raw)
-            const input = paged ? fromCursor(checkedInput) : checkedInput
-            const { ctx: checked, settle } = await authorize(ctx, op, actor, input)
-            const hasCursor =
-              paged && (input.paginationOpts as { cursor: string | null }).cursor !== null
-            const result = await Promise.resolve(op.handler(checked, input)).catch(
-              (error: unknown) => {
-                // A cursor the model made up fails inside Convex, as a plain error or as a system
-                // `ConvexError` (`paginationError: 'InvalidCursor'`); say which field is wrong.
-                if (hasCursor && isCursorFailure(error))
-                  fail(
-                    'INVALID_INPUT',
-                    'cursor: pass the `next` value from the last result exactly, or leave it out for the first page.',
-                  )
-                throw error
-              },
-            )
-            return {
-              status: 'done' as const,
-              result: settle(paged ? toCursor(result as PageOf) : result),
-            }
+            const event = newSeen()
+            return observed('query', op.action, event, async () => {
+              const actor = await agent(ctx, caller)
+              sawActor(event, actor)
+              const checkedInput = inputOf(ctx, { args: toolArgs(op) }, raw)
+              const input = paged ? fromCursor(checkedInput) : checkedInput
+              const { ctx: checked, settle } = await authorize(ctx, op, actor, input, event)
+              const hasCursor =
+                paged && (input.paginationOpts as { cursor: string | null }).cursor !== null
+              const result = await Promise.resolve(op.handler(checked, input)).catch(
+                (error: unknown) => {
+                  // A cursor the model made up fails inside Convex, as a plain error or as a system
+                  // `ConvexError` (`paginationError: 'InvalidCursor'`); say which field is wrong.
+                  if (hasCursor && isCursorFailure(error))
+                    fail(
+                      'INVALID_INPUT',
+                      'cursor: pass the `next` value from the last result exactly, or leave it out for the first page.',
+                    )
+                  throw error
+                },
+              )
+              return {
+                status: 'done' as const,
+                result: settle(paged ? toCursor(result as PageOf) : result),
+              }
+            })
           },
         }),
       )
@@ -428,7 +463,13 @@ export function defineTools(
         },
         // A replayed result may be the marker `storable` left when the result was too large to keep.
         returns: v.union(
-          v.object({ status: v.literal('done'), result: v.union(op.returns, truncated) }),
+          v.object({
+            status: v.literal('done'),
+            result: v.union(op.returns, truncated),
+            // Approved work hands its rows and fields to the event of `approve`, which ran it.
+            written: v.optional(v.array(v.string())),
+            fields: v.optional(v.string()),
+          }),
           needsApproval,
         ),
         handler: async (
@@ -447,241 +488,264 @@ export function defineTools(
             renew?: true
           },
         ) => {
-          // A renewal is the person's doing, after the agent's turn: like approved work, it needs
-          // the live grant, not a running turn (release review 5).
-          const actor = await agent(ctx, caller, { approved: approval !== undefined || renew })
-          const input = inputOf(ctx, op, raw)
-          /**
-           * What a person decides on: the plan, and a fingerprint of each row it lists or the
-           * input names. Each must be readable to the agent: a row it may not read is missing, as
-           * in the handler, so the request never reaches a person.
-           */
-          const planned = async ({
-            ctx: checked,
-            settle,
-          }: Awaited<ReturnType<Internals['authorize']>>) => {
-            const plan = frozen(settle(await planOf(op, checked, input)))
-            const ids = new Map<string, string>()
-            for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input))
-              if (!table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
-                ids.set(id, table)
-            for (const id of plan.rows ?? []) {
-              const table = tenants.tableOf(ctx.db, id)
-              if (table === undefined)
-                throw new Error(
-                  `The plan of ${op.action} lists ${id}, which is no ID of an app table.`,
+          const event = newSeen()
+          // Approved work and a renewal run inside `approve`, whose event covers them.
+          const inner = approval !== undefined || renew === true
+          return observed(
+            'mutation',
+            op.action,
+            event,
+            async () => {
+              // A renewal is the person's doing, after the agent's turn: like approved work, it needs
+              // the live grant, not a running turn (release review 5).
+              const actor = await agent(ctx, caller, { approved: approval !== undefined || renew })
+              sawActor(event, actor)
+              const input = inputOf(ctx, op, raw)
+              /**
+               * What a person decides on: the plan, and a fingerprint of each row it lists or the
+               * input names. Each must be readable to the agent: a row it may not read is missing, as
+               * in the handler, so the request never reaches a person.
+               */
+              const planned = async ({
+                ctx: checked,
+                settle,
+              }: Awaited<ReturnType<Internals['authorize']>>) => {
+                const plan = frozen(settle(await planOf(op, checked, input)))
+                const ids = new Map<string, string>()
+                for (const { table, id } of idsIn(jsonOf(v.object(op.args)), input))
+                  if (!table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
+                    ids.set(id, table)
+                for (const id of plan.rows ?? []) {
+                  const table = tenants.tableOf(ctx.db, id)
+                  if (table === undefined)
+                    throw new Error(
+                      `The plan of ${op.action} lists ${id}, which is no ID of an app table.`,
+                    )
+                  ids.set(id, table)
+                }
+                if (ids.size > maxSeen) {
+                  fail(
+                    'TOO_LARGE',
+                    `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
+                  )
+                }
+                const rows: { table: string; id: string; row: Record<string, unknown> }[] = []
+                for (const [id, table] of ids) {
+                  const row = (await checked.db.get(id)) as Record<string, unknown> | null
+                  if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
+                  rows.push({ table, id, row })
+                }
+                // Fingerprints of the stored rows, read again: app code may have changed the objects
+                // it was handed (release reviews 3 and 4).
+                const seen = await Promise.all(
+                  rows.map(async ({ id }) => ({
+                    id,
+                    hash: await fingerprint(await ctx.db.get(id as GenericId<string>)),
+                  })),
                 )
-              ids.set(id, table)
-            }
-            if (ids.size > maxSeen) {
-              fail(
-                'TOO_LARGE',
-                `One request may cover at most ${maxSeen} rows, so a person can check them. Ask for fewer at once.`,
-              )
-            }
-            const rows: { table: string; id: string; row: Record<string, unknown> }[] = []
-            for (const [id, table] of ids) {
-              const row = (await checked.db.get(id)) as Record<string, unknown> | null
-              if (row === null) fail('NOT_FOUND', `No ${table} with this ID.`)
-              rows.push({ table, id, row })
-            }
-            // Fingerprints of the stored rows, read again: app code may have changed the objects
-            // it was handed (release reviews 3 and 4).
-            const seen = await Promise.all(
-              rows.map(async ({ id }) => ({
-                id,
-                hash: await fingerprint(await ctx.db.get(id as GenericId<string>)),
-              })),
-            )
-            return { plan, seen, rows }
-          }
-          const requester = actorRecord(actor)
-          if (approval) {
-            // Called by `approve` as a sub-transaction, which marked the request as executing: a failure rolls back only this.
-            const row = await lib(ctx).get(approval.id)
-            // The approval covers one call: this tool, with the input the person saw.
-            if (
-              row?.status !== 'executing' ||
-              row.requester.key !== requester.key ||
-              row.action !== op.action ||
-              callKey(row.tool, row.input) !== callKey(op.tool.name, raw)
-            ) {
-              fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
-            }
-            // The work runs on the plan the person approved, as it was. A row it lists or the
-            // input names that changed or went away makes it STALE, before authorizing could call
-            // a deleted row NOT_FOUND (release review 2).
-            if (row.plan === undefined) fail('STALE', stale)
-            for (const { id, hash } of row.seen ?? []) {
-              const now = await ctx.db.get(id as GenericId<string>)
-              if (now === null || (await fingerprint(now)) !== hash) fail('STALE', stale)
-            }
-            // Internal operations this work runs see the approval: their own `approve` rules pass,
-            // and they too change only the plan's rows.
-            const {
-              ctx: checked,
-              tenant,
-              settle,
-              record,
-            } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input)
-            const result = await runForAgent(
-              ctx,
-              checked,
-              settle,
-              op,
-              input,
-              frozen(row.plan),
-              {
-                tenant,
-                requestId: row.requestId,
-                approvalId: approval.id,
-                decidedBy: approval.decidedBy,
-              },
-              record,
-            )
-            return { status: 'done' as const, result }
-          }
-          if (!renew) await rateLimit(ctx, `${requester.key}|writes`, agentWritesPerMinute)
-          const authorized = await authorize(ctx, op, actor, input)
-          const { decision, tenant, settle, mayWrite, record, ctx: checked } = authorized
-          // A renewal only asks: work that needs no person now runs when the agent calls again,
-          // never from a person's click on another request (release review 5).
-          if (renew && decision !== 'approve') fail('STALE', stale)
-          const call = callKey(op.tool.name, input)
-          if (requestId !== undefined) {
-            // A retry key names one call. It replays that call's outcome, through
-            // an approval too, and never stands in for a different call.
-            const earlier = await lib(ctx)
-              .query('activity')
-              .withIndex('by_actor_request', (q) =>
-                q.eq('actor.key', requester.key).eq('requestId', requestId),
-              )
-              .first()
-            if (earlier) {
-              if (earlier.call !== call)
-                fail(
-                  'REQUEST_ID_REUSED',
-                  'This request_id was used for a different call. Send a new one.',
-                )
-              if (earlier.status === 'declined')
-                fail('APPROVAL_DECLINED', 'A person declined this request.')
-              if (earlier.status === 'failed') {
-                // Stored by `approve` from a coded failure: its code is an ErrorCode.
-                const reason = earlier.result as { code: ErrorCode; message: string }
-                fail(reason.code, reason.message)
+                return { plan, seen, rows }
               }
-              return { status: 'done' as const, result: earlier.result }
-            }
-            // A key that names a request still waiting names that call, also for a call that would
-            // run at once (sequence fuzz, 2026-10-07). This check guards every request with the
-            // key, so they all name one call and the first one tells which.
-            const asked = await lib(ctx)
-              .query('approvals')
-              .withIndex('by_requester_request', (q) =>
-                q.eq('requester.key', requester.key).eq('requestId', requestId),
-              )
-              .first()
-            if (asked && callKey(asked.tool, asked.input) !== call)
-              fail(
-                'REQUEST_ID_REUSED',
-                'This request_id was used for a different call. Send a new one.',
-              )
-          }
-          if (decision === 'approve') {
-            const open = await lib(ctx)
-              .query('approvals')
-              .withIndex('by_requester_status', (q) =>
-                q
-                  .eq('requester.key', requester.key)
-                  .eq('status', 'pending')
-                  .gt('expiresAt', Date.now()),
-              )
-              .take(openApprovals + 1)
-            // The same call from the same run (or the same MCP connection) waits on one request.
-            // Another run asks again: a request resumes only the run that made it.
-            const same = open.find(
-              (row) =>
-                callKey(row.tool, row.input) === call &&
-                (caller.door !== 'app' ||
-                  (row.caller.door === 'app' && row.caller.runId === caller.runId)),
-            )
-            if (same)
+              const requester = actorRecord(actor)
+              if (approval) {
+                // Called by `approve` as a sub-transaction, which marked the request as executing: a failure rolls back only this.
+                const row = await lib(ctx).get(approval.id)
+                // The approval covers one call: this tool, with the input the person saw.
+                if (
+                  row?.status !== 'executing' ||
+                  row.requester.key !== requester.key ||
+                  row.action !== op.action ||
+                  callKey(row.tool, row.input) !== callKey(op.tool.name, raw)
+                ) {
+                  fail('APPROVAL_NOT_FOUND', 'This approval does not match the request.')
+                }
+                // The work runs on the plan the person approved, as it was. A row it lists or the
+                // input names that changed or went away makes it STALE, before authorizing could call
+                // a deleted row NOT_FOUND (release review 2).
+                if (row.plan === undefined) fail('STALE', stale)
+                for (const { id, hash } of row.seen ?? []) {
+                  const now = await ctx.db.get(id as GenericId<string>)
+                  if (now === null || (await fingerprint(now)) !== hash) fail('STALE', stale)
+                }
+                // Internal operations this work runs see the approval: their own `approve` rules pass,
+                // and they too change only the plan's rows.
+                const {
+                  ctx: checked,
+                  tenant,
+                  settle,
+                  record,
+                  written,
+                } = await authorize(ctx, op, { ...actor, approvalId: approval.id }, input, event)
+                const result = await runForAgent(
+                  ctx,
+                  checked,
+                  settle,
+                  op,
+                  input,
+                  frozen(row.plan),
+                  {
+                    tenant,
+                    requestId: row.requestId,
+                    approvalId: approval.id,
+                    decidedBy: approval.decidedBy,
+                  },
+                  record,
+                )
+                return {
+                  status: 'done' as const,
+                  result,
+                  written: [...written, ...(event.innerWritten ?? [])],
+                  ...handedFields(event),
+                }
+              }
+              if (!renew) await rateLimit(ctx, `${requester.key}|writes`, agentWritesPerMinute)
+              const authorized = await authorize(ctx, op, actor, input, event)
+              const { decision, tenant, settle, mayWrite, record, ctx: checked } = authorized
+              // A renewal only asks: work that needs no person now runs when the agent calls again,
+              // never from a person's click on another request (release review 5).
+              if (renew && decision !== 'approve') fail('STALE', stale)
+              const call = callKey(op.tool.name, input)
+              if (requestId !== undefined) {
+                // A retry key names one call. It replays that call's outcome, through
+                // an approval too, and never stands in for a different call.
+                const earlier = await lib(ctx)
+                  .query('activity')
+                  .withIndex('by_actor_request', (q) =>
+                    q.eq('actor.key', requester.key).eq('requestId', requestId),
+                  )
+                  .first()
+                if (earlier) {
+                  if (earlier.call !== call)
+                    fail(
+                      'REQUEST_ID_REUSED',
+                      'This request_id was used for a different call. Send a new one.',
+                    )
+                  if (earlier.status === 'declined')
+                    fail('APPROVAL_DECLINED', 'A person declined this request.')
+                  if (earlier.status === 'failed') {
+                    // Stored by `approve` from a coded failure: its code is an ErrorCode.
+                    const reason = earlier.result as { code: ErrorCode; message: string }
+                    fail(reason.code, reason.message)
+                  }
+                  return { status: 'done' as const, result: earlier.result }
+                }
+                // A key that names a request still waiting names that call, also for a call that would
+                // run at once (sequence fuzz, 2026-10-07). This check guards every request with the
+                // key, so they all name one call and the first one tells which.
+                const asked = await lib(ctx)
+                  .query('approvals')
+                  .withIndex('by_requester_request', (q) =>
+                    q.eq('requester.key', requester.key).eq('requestId', requestId),
+                  )
+                  .first()
+                if (asked && callKey(asked.tool, asked.input) !== call)
+                  fail(
+                    'REQUEST_ID_REUSED',
+                    'This request_id was used for a different call. Send a new one.',
+                  )
+              }
+              if (decision === 'approve') {
+                const open = await lib(ctx)
+                  .query('approvals')
+                  .withIndex('by_requester_status', (q) =>
+                    q
+                      .eq('requester.key', requester.key)
+                      .eq('status', 'pending')
+                      .gt('expiresAt', Date.now()),
+                  )
+                  .take(openApprovals + 1)
+                // The same call from the same run (or the same MCP connection) waits on one request.
+                // Another run asks again: a request resumes only the run that made it.
+                const same = open.find(
+                  (row) =>
+                    callKey(row.tool, row.input) === call &&
+                    (caller.door !== 'app' ||
+                      (row.caller.door === 'app' && row.caller.runId === caller.runId)),
+                )
+                if (same) {
+                  event.outcome = 'pending'
+                  event.approval = same._id
+                  return {
+                    status: 'needs_approval' as const,
+                    approvalId: same._id,
+                    summary: inertMarkdown(same.summary),
+                    url: approvalUrl(same._id),
+                  }
+                }
+                // A person said no: the same call from this connection waits until that request would have expired.
+                const callHash = await fingerprint(call)
+                const declined = await lib(ctx)
+                  .query('approvals')
+                  .withIndex('by_requester_call', (q) =>
+                    q
+                      .eq('requester.key', requester.key)
+                      .eq('callHash', callHash)
+                      .eq('status', 'declined')
+                      .gt('expiresAt', Date.now()),
+                  )
+                  .first()
+                if (declined) fail('APPROVAL_DECLINED', 'A person declined this request.')
+                if (open.length >= openApprovals) {
+                  fail(
+                    'RATE_LIMITED',
+                    `${openApprovals} requests already wait for a person. Wait until they are decided.`,
+                  )
+                }
+                const { plan, seen, rows } = await planned(authorized)
+                const summary = oneLine(plan.summary)
+                const expiresAt = Date.now() + approvalTtl
+                const approval = {
+                  action: op.action,
+                  tool: op.tool.name,
+                  input: input as Value,
+                  summary,
+                  requester,
+                  caller,
+                  tenantId: tenant?.id,
+                  requestId,
+                  callHash,
+                  plan: plan as unknown as Value,
+                  seen,
+                  status: 'pending' as const,
+                  expiresAt,
+                }
+                // Convex refuses a document over 1 MiB with an opaque error; say what to change.
+                if (getConvexSize(approval as unknown as Value) > maxApprovalBytes) {
+                  fail(
+                    'TOO_LARGE',
+                    `The plan of ${op.action} is too large to store for approval: a request may hold at most 256 KiB. Make the plan smaller, or split the work into several calls.`,
+                  )
+                }
+                const approvalId = await lib(ctx).insert('approvals', approval)
+                if (approversFor(policy, op.action).sharedRows) {
+                  for (const tenantId of await partiesOf(ctx, tenant, rows, mayWrite)) {
+                    await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
+                  }
+                }
+                event.outcome = 'pending'
+                event.approval = approvalId
+                return {
+                  status: 'needs_approval' as const,
+                  approvalId,
+                  summary: inertMarkdown(summary),
+                  url: approvalUrl(approvalId),
+                }
+              }
               return {
-                status: 'needs_approval' as const,
-                approvalId: same._id,
-                summary: inertMarkdown(same.summary),
-                url: approvalUrl(same._id),
+                status: 'done' as const,
+                result: await runForAgent(
+                  ctx,
+                  checked,
+                  settle,
+                  op,
+                  input,
+                  frozen(settle(await planOf(op, checked, input))),
+                  { tenant, requestId },
+                  record,
+                ),
               }
-            // A person said no: the same call from this connection waits until that request would have expired.
-            const callHash = await fingerprint(call)
-            const declined = await lib(ctx)
-              .query('approvals')
-              .withIndex('by_requester_call', (q) =>
-                q
-                  .eq('requester.key', requester.key)
-                  .eq('callHash', callHash)
-                  .eq('status', 'declined')
-                  .gt('expiresAt', Date.now()),
-              )
-              .first()
-            if (declined) fail('APPROVAL_DECLINED', 'A person declined this request.')
-            if (open.length >= openApprovals) {
-              fail(
-                'RATE_LIMITED',
-                `${openApprovals} requests already wait for a person. Wait until they are decided.`,
-              )
-            }
-            const { plan, seen, rows } = await planned(authorized)
-            const summary = oneLine(plan.summary)
-            const expiresAt = Date.now() + approvalTtl
-            const approval = {
-              action: op.action,
-              tool: op.tool.name,
-              input: input as Value,
-              summary,
-              requester,
-              caller,
-              tenantId: tenant?.id,
-              requestId,
-              callHash,
-              plan: plan as unknown as Value,
-              seen,
-              status: 'pending' as const,
-              expiresAt,
-            }
-            // Convex refuses a document over 1 MiB with an opaque error; say what to change.
-            if (getConvexSize(approval as unknown as Value) > maxApprovalBytes) {
-              fail(
-                'TOO_LARGE',
-                `The plan of ${op.action} is too large to store for approval: a request may hold at most 256 KiB. Make the plan smaller, or split the work into several calls.`,
-              )
-            }
-            const approvalId = await lib(ctx).insert('approvals', approval)
-            if (approversFor(policy, op.action).sharedRows) {
-              for (const tenantId of await partiesOf(ctx, tenant, rows, mayWrite)) {
-                await lib(ctx).insert('approvalParties', { approvalId, tenantId, expiresAt })
-              }
-            }
-            return {
-              status: 'needs_approval' as const,
-              approvalId,
-              summary: inertMarkdown(summary),
-              url: approvalUrl(approvalId),
-            }
-          }
-          return {
-            status: 'done' as const,
-            result: await runForAgent(
-              ctx,
-              checked,
-              settle,
-              op,
-              input,
-              frozen(settle(await planOf(op, checked, input))),
-              { tenant, requestId },
-              record,
-            ),
-          }
+            },
+            inner,
+          )
         },
       }),
     )
@@ -696,23 +760,27 @@ export function defineTools(
         ctx: Ctx,
         { caller, input: raw }: { caller: AgentCaller; input: unknown },
       ) => {
-        const actor = await agent(ctx, caller)
-        const input = inputOf(ctx, { args: checkApprovalArgs }, raw) as { approvalId: string }
-        const id = lib(ctx).normalizeId('approvals', input.approvalId)
-        const row = id && (await lib(ctx).get(id))
-        if (!row || row.requester.key !== actorRecord(actor).key) {
-          fail('APPROVAL_NOT_FOUND', 'No request with this ID was made by this connection.')
-        }
-        const status = requestStatus(row)
-        return {
-          status: 'done' as const,
-          result: {
-            status,
-            summary: inertMarkdown(row.summary),
-            result: row.result ?? null,
-            error: row.error ?? null,
-          },
-        }
+        const event = newSeen()
+        return observed('query', 'agents.check_approval', event, async () => {
+          const actor = await agent(ctx, caller)
+          sawActor(event, actor)
+          const input = inputOf(ctx, { args: checkApprovalArgs }, raw) as { approvalId: string }
+          const id = lib(ctx).normalizeId('approvals', input.approvalId)
+          const row = id && (await lib(ctx).get(id))
+          if (!row || row.requester.key !== actorRecord(actor).key) {
+            fail('APPROVAL_NOT_FOUND', 'No request with this ID was made by this connection.')
+          }
+          const status = requestStatus(row)
+          return {
+            status: 'done' as const,
+            result: {
+              status,
+              summary: inertMarkdown(row.summary),
+              result: row.result ?? null,
+              error: row.error ?? null,
+            },
+          }
+        })
       },
     }),
   )
@@ -735,70 +803,76 @@ export function defineTools(
   const request_upload = guarded(
     internalMutationGeneric({
       args: { caller: agentCallerValidator, input: v.any(), requestId: v.optional(v.string()) },
-      handler: async (
-        ctx: MCtx,
-        { caller, input: raw }: { caller: AgentCaller; input: unknown },
-      ) => {
-        if (!uploads) return fail('FORBIDDEN', 'This app takes no uploads.')
-        const actor = await agent(ctx, caller)
-        // The catalog shows the tool only to these scopes; the function checks them for every door.
-        if (actor.door !== 'mcp' || !uploads.scopes.some((scope) => actor.scopes.includes(scope)))
-          fail('FORBIDDEN', 'This connection may not upload files.')
-        const { count = 1 } = inputOf(ctx, { args: requestUploadArgs }, raw) as { count?: number }
-        if (!Number.isSafeInteger(count) || count < 1 || count > uploadsPerRequest)
-          fail('INVALID_INPUT', `count: a whole number from 1 to ${uploadsPerRequest}.`)
-        const owner = actorRecord(actor)
-        await rateLimit(ctx, `${owner.key}|writes`, agentWritesPerMinute)
-        let waiting = 0
-        const now = Date.now()
-        for (const status of ['open', 'stored'] as const) {
-          // Expired rows wait for housekeeping, but no longer count.
-          const rows = await lib(ctx)
-            .query('uploads')
-            .withIndex('by_owner_status_expires', (q) =>
-              q.eq('owner.key', owner.key).eq('status', status).gt('expiresAt', now),
+      handler: withEvent(
+        'mutation',
+        'agents.request_upload',
+        async (
+          ctx: MCtx,
+          { caller, input: raw }: { caller: AgentCaller; input: unknown },
+          event,
+        ) => {
+          if (!uploads) return fail('FORBIDDEN', 'This app takes no uploads.')
+          const actor = await agent(ctx, caller)
+          sawActor(event, actor)
+          // The catalog shows the tool only to these scopes; the function checks them for every door.
+          if (actor.door !== 'mcp' || !uploads.scopes.some((scope) => actor.scopes.includes(scope)))
+            fail('FORBIDDEN', 'This connection may not upload files.')
+          const { count = 1 } = inputOf(ctx, { args: requestUploadArgs }, raw) as { count?: number }
+          if (!Number.isSafeInteger(count) || count < 1 || count > uploadsPerRequest)
+            fail('INVALID_INPUT', `count: a whole number from 1 to ${uploadsPerRequest}.`)
+          const owner = actorRecord(actor)
+          await rateLimit(ctx, `${owner.key}|writes`, agentWritesPerMinute)
+          let waiting = 0
+          const now = Date.now()
+          for (const status of ['open', 'stored'] as const) {
+            // Expired rows wait for housekeeping, but no longer count.
+            const rows = await lib(ctx)
+              .query('uploads')
+              .withIndex('by_owner_status_expires', (q) =>
+                q.eq('owner.key', owner.key).eq('status', status).gt('expiresAt', now),
+              )
+              .take(unclaimedPerActor + 1)
+            waiting += rows.length
+          }
+          if (waiting + count > unclaimedPerActor)
+            fail(
+              'RATE_LIMITED',
+              `${waiting} upload links or files of this connection wait for a claim; at most ${unclaimedPerActor} may. Use them, or wait until they expire.`,
             )
-            .take(unclaimedPerActor + 1)
-          waiting += rows.length
-        }
-        if (waiting + count > unclaimedPerActor)
-          fail(
-            'RATE_LIMITED',
-            `${waiting} upload links or files of this connection wait for a claim; at most ${unclaimedPerActor} may. Use them, or wait until they expire.`,
-          )
-        const site = process.env.CONVEX_SITE_URL
-        if (!site) throw new Error('CONVEX_SITE_URL is not set, so no upload link can be made.')
-        const expiresAt = now + uploadLinkMs
-        const tokens: string[] = []
-        for (let index = 0; index < count; index++) {
-          const token = newToken()
-          tokens.push(token)
-          await lib(ctx).insert('uploads', {
-            tokenHash: await sha256Hex(new TextEncoder().encode(token)),
-            owner,
-            status: 'open',
-            expiresAt,
-            maxBytes: uploads.maxBytes,
-            types: [...uploads.types],
-          })
-        }
-        return {
-          status: 'done' as const,
-          result: {
-            url: new URL(uploads.path, site).toString(),
-            method: 'POST',
-            tokens,
-            expiresAt: new Date(expiresAt).toISOString(),
-            maxBytes: uploads.maxBytes,
-            types: uploads.types,
-            howTo:
-              'Send each file as the raw request body, one token per file, with the header ' +
-              '"Authorization: Bearer <token>" (curl -X POST --data-binary @file -H "Authorization: Bearer <token>" <url>). ' +
-              'The answer has an uploadId; pass it to the tool that takes the file within 24 hours. ' +
-              'A 401 means the token expired or was used: ask for a new one.',
-          },
-        }
-      },
+          const site = process.env.CONVEX_SITE_URL
+          if (!site) throw new Error('CONVEX_SITE_URL is not set, so no upload link can be made.')
+          const expiresAt = now + uploadLinkMs
+          const tokens: string[] = []
+          for (let index = 0; index < count; index++) {
+            const token = newToken()
+            tokens.push(token)
+            await lib(ctx).insert('uploads', {
+              tokenHash: await sha256Hex(new TextEncoder().encode(token)),
+              owner,
+              status: 'open',
+              expiresAt,
+              maxBytes: uploads.maxBytes,
+              types: [...uploads.types],
+            })
+          }
+          return {
+            status: 'done' as const,
+            result: {
+              url: new URL(uploads.path, site).toString(),
+              method: 'POST',
+              tokens,
+              expiresAt: new Date(expiresAt).toISOString(),
+              maxBytes: uploads.maxBytes,
+              types: uploads.types,
+              howTo:
+                'Send each file as the raw request body, one token per file, with the header ' +
+                '"Authorization: Bearer <token>" (curl -X POST --data-binary @file -H "Authorization: Bearer <token>" <url>). ' +
+                'The answer has an uploadId; pass it to the tool that takes the file within 24 hours. ' +
+                'A 401 means the token expired or was used: ask for a new one.',
+            },
+          }
+        },
+      ),
     }),
   )
   /** For `uploadRoute`: the limits of an open link, or `null` for a token that is not one. */
@@ -980,10 +1054,22 @@ export function defineTools(
     return false
   }
 
-  async function decidable(ctx: MCtx, approvalId: string) {
+  /**
+   * The open request a person may decide, and its event: the person is the actor, the agent that
+   * asked is `agent`, and the line carries the request's action, so a search by action or by the
+   * agent finds the decision.
+   */
+  async function decidable(ctx: MCtx, approvalId: string, event: Seen) {
     const actor = await person(ctx)
+    sawActor(event, actor)
     const id = lib(ctx).normalizeId('approvals', approvalId)
     const row = id && (await lib(ctx).get(id))
+    if (row) {
+      event.action = row.action
+      event.agent = row.requester.key
+      event.approval = row._id
+      if (row.tenantId !== undefined) event.tenant = row.tenantId
+    }
     if (!row || row.status !== 'pending' || !(await mayDecide(ctx, actor, row))) {
       fail('APPROVAL_NOT_FOUND', 'No open request with this ID is yours to decide.')
     }
@@ -1071,167 +1157,192 @@ export function defineTools(
     pending: guarded(
       queryGeneric({
         args: { tenantId: v.optional(v.string()) },
-        handler: async (ctx: Ctx, { tenantId }: { tenantId?: string }) => {
-          const actor = await person(ctx)
-          const now = Date.now()
-          // One read budget for the whole list: a person with many large open requests sees the
-          // first ones instead of a query over Convex's read limit.
-          const listBudget = readBudget()
-          const { rows: mine } = await within(
-            lib(ctx)
-              .query('approvals')
-              .withIndex('by_user_status', (q) =>
-                q
-                  .eq('requester.userId', actor.user._id)
-                  .eq('status', 'pending')
-                  .gt('expiresAt', now),
-              ),
-            listBudget,
-          )
-          const out = mine.map((row) => requestView(row, true))
-          if (tenantId !== undefined) {
-            const { rows: team } = await within(
+        handler: withEvent(
+          'query',
+          'agents.pending',
+          async (ctx: Ctx, { tenantId }: { tenantId?: string }, event) => {
+            const actor = await person(ctx)
+            sawActor(event, actor)
+            const now = Date.now()
+            // One read budget for the whole list: a person with many large open requests sees the
+            // first ones instead of a query over Convex's read limit.
+            const listBudget = readBudget()
+            const { rows: mine } = await within(
               lib(ctx)
                 .query('approvals')
-                .withIndex('by_tenant_status', (q) =>
-                  q.eq('tenantId', tenantId).eq('status', 'pending').gt('expiresAt', now),
+                .withIndex('by_user_status', (q) =>
+                  q
+                    .eq('requester.userId', actor.user._id)
+                    .eq('status', 'pending')
+                    .gt('expiresAt', now),
                 ),
               listBudget,
             )
-            const { rows: parties } = await within(
-              lib(ctx)
-                .query('approvalParties')
-                .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId).gt('expiresAt', now)),
-              listBudget,
-            )
-            for (const party of parties) {
-              if (listBudget.spent) break
-              const row = await lib(ctx).get(party.approvalId)
-              if (row) listBudget.count(row)
-              if (row?.status === 'pending') team.push(row)
+            const out = mine.map((row) => requestView(row, true))
+            if (tenantId !== undefined) {
+              const { rows: team } = await within(
+                lib(ctx)
+                  .query('approvals')
+                  .withIndex('by_tenant_status', (q) =>
+                    q.eq('tenantId', tenantId).eq('status', 'pending').gt('expiresAt', now),
+                  ),
+                listBudget,
+              )
+              const { rows: parties } = await within(
+                lib(ctx)
+                  .query('approvalParties')
+                  .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId).gt('expiresAt', now)),
+                listBudget,
+              )
+              for (const party of parties) {
+                if (listBudget.spent) break
+                const row = await lib(ctx).get(party.approvalId)
+                if (row) listBudget.count(row)
+                if (row?.status === 'pending') team.push(row)
+              }
+              for (const row of team) {
+                if (row.requester.userId !== actor.user._id && (await mayDecide(ctx, actor, row)))
+                  out.push(requestView(row, false))
+              }
             }
-            for (const row of team) {
-              if (row.requester.userId !== actor.user._id && (await mayDecide(ctx, actor, row)))
-                out.push(requestView(row, false))
-            }
-          }
-          return out
-        },
+            return out
+          },
+        ),
       }),
     ),
     /** One request, for the approval page: what it is and whether this person may decide it. */
     get: guarded(
       queryGeneric({
         args: { approvalId: v.string() },
-        handler: async (ctx: Ctx, { approvalId }: { approvalId: string }) => {
-          const actor = await person(ctx)
-          const id = lib(ctx).normalizeId('approvals', approvalId)
-          const row = id && (await lib(ctx).get(id))
-          if (!row || !(await mayDecide(ctx, actor, row))) return null
-          const status = requestStatus(row)
-          return {
-            ...requestView(row, row.requester.userId === actor.user._id),
-            status,
-            error: row.error ?? null,
-          }
-        },
+        handler: withEvent(
+          'query',
+          'agents.get',
+          async (ctx: Ctx, { approvalId }: { approvalId: string }, event) => {
+            const actor = await person(ctx)
+            sawActor(event, actor)
+            const id = lib(ctx).normalizeId('approvals', approvalId)
+            const row = id && (await lib(ctx).get(id))
+            if (!row || !(await mayDecide(ctx, actor, row))) return null
+            const status = requestStatus(row)
+            return {
+              ...requestView(row, row.requester.userId === actor.user._id),
+              status,
+              error: row.error ?? null,
+            }
+          },
+        ),
       }),
     ),
     /** Runs the request as the agent, with the person's approval, in this transaction. */
     approve: guarded(
       mutationGeneric({
         args: { approvalId: v.string() },
-        handler: async (ctx: MCtx, { approvalId }: { approvalId: string }) => {
-          const { actor: approver, row } = await decidable(ctx, approvalId)
-          let outcome:
-            | { status: 'approved' }
-            | {
-                status: 'failed'
-                error: { code: string; message: string }
-                /** After STALE: the same call asked again on the current data, waiting for a person. */
-                next?: GenericId<'approvals'>
-              }
-          {
-            // The operation runs as the agent in a sub-transaction. It checks the grant again, so
-            // revoking the connection also cancels its requests, and the rows the person saw (STALE).
-            // Marks the request as running, so its own work (and only that) runs under this approval.
-            const followUp = crypto.randomUUID()
-            await lib(ctx).patch(row._id, { status: 'executing', followUp })
-            // Only the operation's own failure is caught: its writes rolled back with it. Anything
-            // that fails after it fails this whole mutation, so a committed write is never "failed".
-            const ran = await ctx
-              .runMutation(ownRef(row.tool), {
-                caller: row.caller,
-                input: row.input,
-                approval: { id: row._id, decidedBy: approver.user._id },
-              })
-              .then(
-                (output) => ({ ok: true as const, output }),
-                (error: unknown) => ({ ok: false as const, error }),
-              )
-            if (ran.ok) {
-              const decided = {
-                status: 'approved' as const,
-                decidedBy: approver.user._id,
-                decidedAt: Date.now(),
-              }
-              // The result gets the room the decided request leaves, so storing it cannot exceed
-              // the document limit; the reserve in maxApprovalBytes always fits the marker.
-              const room =
-                maxApprovalBytes -
-                getConvexSize({ ...row, ...decided, followUp } as unknown as Value)
-              await lib(ctx).patch(row._id, {
-                ...decided,
-                result: storable(ran.output.result, Math.min(64 * 1024, room)),
-              })
-              outcome = { status: 'approved' }
-            } else {
-              const failure = toolFailure(ran.error)
-              // Same room as the success branch: what the decided request leaves.
-              const room =
-                maxApprovalBytes -
-                getConvexSize({
-                  ...row,
-                  status: 'failed',
+        // One transaction, one line: the work runs inside it and writes none of its own. Its
+        // outcome, rows and fields are this line's; a failure after it fails the whole line.
+        handler: withEvent(
+          'mutation',
+          'agents.approve',
+          async (ctx: MCtx, { approvalId }: { approvalId: string }, event) => {
+            const { actor: approver, row } = await decidable(ctx, approvalId, event)
+            let outcome:
+              | { status: 'approved' }
+              | {
+                  status: 'failed'
+                  error: { code: string; message: string }
+                  /** After STALE: the same call asked again on the current data, waiting for a person. */
+                  next?: GenericId<'approvals'>
+                }
+            {
+              // The operation runs as the agent in a sub-transaction. It checks the grant again, so
+              // revoking the connection also cancels its requests, and the rows the person saw (STALE).
+              // Marks the request as running, so its own work (and only that) runs under this approval.
+              const followUp = crypto.randomUUID()
+              await lib(ctx).patch(row._id, { status: 'executing', followUp })
+              // Only the operation's own failure is caught: its writes rolled back with it. Anything
+              // that fails after it fails this whole mutation, so a committed write is never "failed".
+              const ran = await ctx
+                .runMutation(ownRef(row.tool), {
+                  caller: row.caller,
+                  input: row.input,
+                  approval: { id: row._id, decidedBy: approver.user._id },
+                })
+                .then(
+                  (output) => ({ ok: true as const, output }),
+                  (error: unknown) => ({ ok: false as const, error }),
+                )
+              if (ran.ok) {
+                const { written, fields } = ran.output as { written?: string[]; fields?: string }
+                event.innerWritten = new Set(written)
+                if (fields) tookFields(event, fields)
+                const decided = {
+                  status: 'approved' as const,
                   decidedBy: approver.user._id,
-                  followUp,
-                  error: { code: failure.code, message: '' },
-                } as unknown as Value)
-              const reason = boundedFailure(failure, room)
-              await lib(ctx).patch(row._id, {
-                status: 'failed',
-                error: reason,
-                decidedBy: approver.user._id,
-              })
-              // Changed since the agent asked: the same call asks again on the current data, so the
-              // person can decide on what is true now, also when the agent is gone. Without a
-              // retry key in the activity row: the agent's retry finds the new request.
-              const next = reason.code === 'STALE' ? await askAgain(ctx, row) : undefined
-              await record(
-                ctx,
-                next ? { ...row, requestId: undefined } : row,
-                'failed',
-                approver.user._id,
-                reason,
-              )
-              outcome = { status: 'failed', error: reason, ...(next ? { next } : {}) }
+                  decidedAt: Date.now(),
+                }
+                // The result gets the room the decided request leaves, so storing it cannot exceed
+                // the document limit; the reserve in maxApprovalBytes always fits the marker.
+                const room =
+                  maxApprovalBytes -
+                  getConvexSize({ ...row, ...decided, followUp } as unknown as Value)
+                await lib(ctx).patch(row._id, {
+                  ...decided,
+                  result: storable(ran.output.result, Math.min(64 * 1024, room)),
+                })
+                outcome = { status: 'approved' }
+              } else {
+                const failure = toolFailure(ran.error)
+                // Same room as the success branch: what the decided request leaves.
+                const room =
+                  maxApprovalBytes -
+                  getConvexSize({
+                    ...row,
+                    status: 'failed',
+                    decidedBy: approver.user._id,
+                    followUp,
+                    error: { code: failure.code, message: '' },
+                  } as unknown as Value)
+                const reason = boundedFailure(failure, room)
+                event.outcome = { code: failure.code }
+                await lib(ctx).patch(row._id, {
+                  status: 'failed',
+                  error: reason,
+                  decidedBy: approver.user._id,
+                })
+                // Changed since the agent asked: the same call asks again on the current data, so the
+                // person can decide on what is true now, also when the agent is gone. Without a
+                // retry key in the activity row: the agent's retry finds the new request.
+                const next = reason.code === 'STALE' ? await askAgain(ctx, row) : undefined
+                await record(
+                  ctx,
+                  next ? { ...row, requestId: undefined } : row,
+                  'failed',
+                  approver.user._id,
+                  reason,
+                )
+                outcome = { status: 'failed', error: reason, ...(next ? { next } : {}) }
+              }
             }
-          }
-          await resume(ctx, row.caller)
-          return outcome
-        },
+            await resume(ctx, row.caller)
+            return outcome
+          },
+        ),
       }),
     ),
     decline: guarded(
       mutationGeneric({
         args: { approvalId: v.string() },
-        handler: async (ctx: MCtx, { approvalId }: { approvalId: string }) => {
-          const { actor, row } = await decidable(ctx, approvalId)
-          await lib(ctx).patch(row._id, { status: 'declined', decidedBy: actor.user._id })
-          await record(ctx, row, 'declined', actor.user._id)
-          await resume(ctx, row.caller)
-          return null
-        },
+        handler: withEvent(
+          'mutation',
+          'agents.decline',
+          async (ctx: MCtx, { approvalId }: { approvalId: string }, event) => {
+            const { actor, row } = await decidable(ctx, approvalId, event)
+            await lib(ctx).patch(row._id, { status: 'declined', decidedBy: actor.user._id })
+            await record(ctx, row, 'declined', actor.user._id)
+            await resume(ctx, row.caller)
+            event.outcome = 'declined'
+            return null
+          },
+        ),
       }),
     ),
   }
@@ -1243,36 +1354,41 @@ export function defineTools(
   const activity = guarded(
     queryGeneric({
       args: { tenantId: v.optional(v.string()), limit: v.optional(v.number()) },
-      handler: async (ctx: Ctx, { tenantId, limit }: { tenantId?: string; limit?: number }) => {
-        const actor = await person(ctx)
-        const take = Math.min(Math.max(1, limit ?? 50), 200)
-        let rows
-        if (tenantId !== undefined) {
-          const tenant = tenants.refOf(ctx.db, tenantId)
-          if (!tenant || (await roleOf(readOnly(ctx), actor.user, tenant)) === null)
-            fail('NOT_FOUND', 'Nothing with these IDs was found.')
-          rows = await lib(ctx)
-            .query('activity')
-            .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId))
-            .order('desc')
-            .take(take)
-        } else {
-          rows = await lib(ctx)
-            .query('activity')
-            .withIndex('by_user', (q) => q.eq('actor.userId', actor.user._id))
-            .order('desc')
-            .take(take)
-        }
-        return rows.map((row) => ({
-          id: row._id,
-          at: row._creationTime,
-          actor: row.actor,
-          action: row.action,
-          tool: row.tool ?? null,
-          status: row.status,
-          decidedBy: row.decidedBy ?? null,
-        }))
-      },
+      handler: withEvent(
+        'query',
+        'agents.activity',
+        async (ctx: Ctx, { tenantId, limit }: { tenantId?: string; limit?: number }, event) => {
+          const actor = await person(ctx)
+          sawActor(event, actor)
+          const take = Math.min(Math.max(1, limit ?? 50), 200)
+          let rows
+          if (tenantId !== undefined) {
+            const tenant = tenants.refOf(ctx.db, tenantId)
+            if (!tenant || (await roleOf(readOnly(ctx), actor.user, tenant)) === null)
+              fail('NOT_FOUND', 'Nothing with these IDs was found.')
+            rows = await lib(ctx)
+              .query('activity')
+              .withIndex('by_tenant', (q) => q.eq('tenantId', tenantId))
+              .order('desc')
+              .take(take)
+          } else {
+            rows = await lib(ctx)
+              .query('activity')
+              .withIndex('by_user', (q) => q.eq('actor.userId', actor.user._id))
+              .order('desc')
+              .take(take)
+          }
+          return rows.map((row) => ({
+            id: row._id,
+            at: row._creationTime,
+            actor: row.actor,
+            action: row.action,
+            tool: row.tool ?? null,
+            status: row.status,
+            decidedBy: row.decidedBy ?? null,
+          }))
+        },
+      ),
     }),
   )
 

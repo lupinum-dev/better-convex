@@ -344,8 +344,8 @@ export const mutants: Mutant[] = [
     id: 'C14-action-hands-over',
     guards: 'C14',
     file: 'packages/functions/src/functions.ts',
-    find: '            handOver(actor),\n            () => {},',
-    replace: "            { kind: 'system', job: 'mutant' },\n            () => {},",
+    find: '              handOver(actor),\n              () => {},',
+    replace: "              { kind: 'system', job: 'mutant' },\n              () => {},",
     kills: [
       `${F}/actions.test.ts > an allowed person runs the action, and its internal operations see the same person`,
     ],
@@ -398,9 +398,9 @@ export const mutants: Mutant[] = [
     id: 'S7-internal-action',
     guards: 'S7',
     file: 'packages/functions/src/functions.ts',
-    find: "if (reached) {\n            console.error(\n              'Raw function reached from an internal action",
+    find: "if (reached) {\n              console.error(\n                'Raw function reached from an internal action",
     replace:
-      "if (false) {\n            console.error(\n              'Raw function reached from an internal action",
+      "if (false) {\n              console.error(\n                'Raw function reached from an internal action",
     kills: [`${F}/rules.test.ts > an internal action that reached a raw function fails`],
   },
   {
@@ -1115,8 +1115,8 @@ export const mutants: Mutant[] = [
     id: 'C10-shown-operation',
     guards: 'C10',
     file: 'packages/functions/src/functions.ts',
-    find: '        actor: shown(actor),\n      },',
-    replace: '        actor,\n      },',
+    find: '        actor: shown(actor),\n        log: logOf(seen),\n      },',
+    replace: '        actor,\n        log: logOf(seen),\n      },',
     kills: [
       `${A}/approvals/approvals.test.ts > work an approved request scheduled runs under the approval, for an hour`,
       `${callbacks} > mutation handler, agent acting under a person’s approval receives exactly these keys`,
@@ -2777,8 +2777,9 @@ export const mutants: Mutant[] = [
     id: 'S-A-audit-nested-no-row',
     guards: 'saas-a',
     file: 'packages/functions/src/functions.ts',
-    find: 'if (nested) return { operation: operationMark, result, written: [...written] }',
-    replace: 'if (false) return { operation: operationMark, result, written: [...written] }',
+    find: 'if (nested)\n              return { operation: operationMark, result, written: [...written], ...handBack }',
+    replace:
+      'if (false)\n              return { operation: operationMark, result, written: [...written], ...handBack }',
     kills: [
       `${F}/limits-audit.test.ts > a public mutation that runs an internal operation writes one row with both calls ids`,
     ],

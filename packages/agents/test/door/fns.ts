@@ -50,6 +50,8 @@ export const fns = defineFunctions({
     memberships: owner('userId'),
     projects: tenant('orgId'),
   },
+  // Each call writes its event line; setup collects them for events.test.ts.
+  observe: true,
 })
 
 export const { query, mutation } = fns
