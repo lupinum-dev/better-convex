@@ -111,6 +111,7 @@ describe('user creation policy with real Better Auth', () => {
       emailVerified: false,
       image: undefined,
       name: 'Owner',
+      isAnonymous: false,
     })
     const stored = await users()
     expect(stored.page).toHaveLength(1)

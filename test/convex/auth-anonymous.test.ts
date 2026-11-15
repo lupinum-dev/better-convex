@@ -228,6 +228,28 @@ it('preserves guest profile data after email sign-in links and deletes the anony
   expect(await test.withIdentity(guestIdentity).query((ctx) => auth.getUser(ctx))).toBeNull()
 })
 
+// Catches: an invite-only beforeUserCreate that cannot tell a guest from a person who typed an
+// address, so it must either refuse every guest or let unproven addresses through.
+it('tells beforeUserCreate whether the new user is a guest', async () => {
+  const seen: boolean[] = []
+  const { client } = setup({
+    experimental: { anonymous: true },
+    beforeUserCreate: async ({ user }) => {
+      seen.push(user.isAnonymous)
+      return { allowed: true }
+    },
+  })
+  expect((await client.signIn.anonymous()).error).toBeNull()
+  await client.signOut()
+  const signup = await client.signUp.email({
+    email: 'person@example.test',
+    password: 'Synthetic person password 2026',
+    name: 'Person',
+  })
+  expect(signup.error).toBeNull()
+  expect(seen).toEqual([true, false])
+})
+
 it('rejects anonymous linking before two-factor verification can authenticate the new account', () => {
   expect(() =>
     createBetterConvexAuth(component, {
