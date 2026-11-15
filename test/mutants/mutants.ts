@@ -2141,6 +2141,41 @@ export const mutants: Mutant[] = [
     ],
     projects: ['security'],
   },
+  // serverConvex fetch sends the caller's token only to a path of the deployment's own host.
+  {
+    id: 'P-server-fetch-path-only',
+    guards: 'transport',
+    file: 'src/runtime/server/utils/server-convex-caller.ts',
+    find: "typeof path === 'string' && HTTP_ACTION_PATH.test(path)",
+    replace: "typeof path === 'string'",
+    kills: [
+      'test/unit/server-convex-caller.test.ts > serverConvex fetch > refuses the path "files/a" before it reads the session or sends a request',
+      'test/unit/server-convex-caller.test.ts > serverConvex fetch > refuses the path "/files/a#fragment" before it reads the session or sends a request',
+    ],
+    projects: ['unit'],
+  },
+  {
+    id: 'P-server-fetch-no-redirect',
+    guards: 'transport',
+    file: 'src/runtime/server/utils/server-convex-caller.ts',
+    find: "redirect: 'manual',",
+    replace: "redirect: 'follow',",
+    kills: [
+      'test/unit/server-convex-caller.test.ts > serverConvex fetch > returns a redirect instead of following it, so the token stays on the deployment',
+    ],
+    projects: ['unit'],
+  },
+  {
+    id: 'P-server-fetch-read-only',
+    guards: 'transport',
+    file: 'src/runtime/server/utils/server-convex-caller.ts',
+    find: "if (method !== 'GET' && method !== 'HEAD') {",
+    replace: 'if (false) {',
+    kills: [
+      'test/unit/server-convex-caller.test.ts > serverConvex fetch > refuses the method POST',
+    ],
+    projects: ['unit'],
+  },
   // The renewal cookie of a server token exchange reaches the browser.
   {
     id: 'P-session-ssr-renewal-cookie',
@@ -4920,6 +4955,22 @@ export const mutants: Mutant[] = [
 ]
 
 export const equivalents: Equivalent[] = [
+  {
+    id: 'P-server-fetch-same-origin',
+    file: 'src/runtime/server/utils/server-convex-caller.ts',
+    find: 'if (!url || url.origin !== base.origin) {',
+    replace: 'if (!url) {',
+    reason:
+      'HTTP_ACTION_PATH admits only one leading slash and no backslash, whitespace or control character, so new URL(path, base) always keeps the base origin: the origin check is defence in depth.',
+  },
+  {
+    id: 'P-server-fetch-required-auth',
+    file: 'src/runtime/server/utils/server-convex-caller.ts',
+    find: "if (normalized.auth === 'required' && !token) throw authenticationRequiredError()\n    const signal",
+    replace: 'const signal',
+    reason:
+      "getToken() already throws for auth: 'required' without a token (resolveServerToken), as for query: the check, like the one in prepareClient, is defence in depth.",
+  },
   {
     id: 'S14-live-grant-id',
     file: 'src/runtime/convex-auth/mcp-principal.ts',
