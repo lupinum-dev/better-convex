@@ -8,6 +8,7 @@ import type {
 } from '../../src/runtime/composables/useConvexPaginatedQuery'
 import type {
   ConvexQueryArgs,
+  UseConvexQueryParameters,
   UseNuxtConvexQueryOptions,
 } from '../../src/runtime/composables/useConvexQuery'
 import type { ConvexAuthMode } from '../../src/runtime/utils/auth-status'
@@ -27,6 +28,22 @@ function deferredOptionContracts() {
 
 declare const requiredQuery: FunctionReference<'query', 'public', { id: string }, string>
 void deferredOptionContracts
+
+// The docs' pass-through wrapper in a Nuxt app: Nuxt options pass through it unchanged.
+function useWrappedQuery<Query extends FunctionReference<'query'>>(
+  query: Query,
+  ...parameters: UseConvexQueryParameters<Query, UseNuxtConvexQueryOptions>
+) {
+  return useConvexQuery(query, ...parameters)
+}
+function wrapperContracts() {
+  void useWrappedQuery(requiredQuery, { id: 'note' }, { server: false, lazy: true })
+  // @ts-expect-error required query arguments cannot be omitted through the wrapper
+  void useWrappedQuery(requiredQuery)
+  // @ts-expect-error a lazy query cannot also be deferred through the wrapper
+  void useWrappedQuery(requiredQuery, { id: 'note' }, { immediate: false, lazy: true })
+}
+void wrapperContracts
 
 type Assert<T extends true> = T
 type IsEqual<A, B> =

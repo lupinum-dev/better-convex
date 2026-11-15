@@ -1,19 +1,28 @@
 /// <reference types="vite/client" />
 
+import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { describe, expect, it, vi } from 'vitest'
 
-import { authComponent, createRealAuth, useAuthEnvironment } from '../helpers/real-auth'
+import deletePathsSchema from '../fixtures/auth-delete-paths/convex/schema'
+import {
+  authComponent,
+  createRealAuth,
+  type RealAuthSetup,
+  useAuthEnvironment,
+} from '../helpers/real-auth'
+
+const deletePathsModules = import.meta.glob('../fixtures/auth-delete-paths/convex/**/*.ts')
 
 const credentials = { email: 'person@example.test', password: 'synthetic-password-for-delete' }
 
 type Options = Parameters<typeof createRealAuth>[0]
 
 /** Without `mail`, the app sends no email, so deletion needs a fresh session or the password. */
-function setup(options: Options, mail?: 'mail') {
+function setup(options: Options, mail?: 'mail', root?: RealAuthSetup['root']) {
   const real = createRealAuth(
     { emailAndPassword: { requireEmailVerification: false }, ...options },
-    mail ? {} : { email: false },
+    { ...(mail ? {} : { email: false }), ...(root ? { root } : {}) },
   )
   const browser = real.client('198.51.100.7')
   const request = (method: 'GET' | 'POST', path: string, body?: Record<string, unknown>) =>
@@ -143,5 +152,30 @@ describe('account deletion with real Better Auth', () => {
     expect(link.pathname).toBe('/api/auth/delete-user/callback')
     expect((await request('GET', `/delete-user/callback?token=${message.token}`)).status).toBe(200)
     expect(await users()).toHaveLength(0)
+  })
+
+  // Catches: the docs sending apps to a delete path that skips their onDelete trigger, so the
+  // user projection and its erasure never run for a user an admin or a cleanup job removes.
+  it.each([
+    ['deleteThroughComponent', false],
+    ['deleteThroughBetterAuth', true],
+  ] as const)('%s from a Convex function runs the onDelete trigger: %s', async (path, runs) => {
+    const { request, signIn, users, sessions, accounts, test } = setup({}, undefined, {
+      schema: deletePathsSchema,
+      modules: deletePathsModules,
+    })
+    await signIn()
+    expect((await request('GET', '/get-session')).status).toBe(200)
+    const id = (await users())[0]!.id as string
+    await test.mutation(makeFunctionReference<'mutation', { id: string }>(`auth:${path}`), { id })
+    expect(await users()).toEqual([])
+    expect((await sessions()).page).toEqual([])
+    expect((await accounts()).page).toEqual([])
+    expect(
+      await test.query(
+        makeFunctionReference<'query', Record<string, never>, string[]>('auth:deletedAuthUsers'),
+        {},
+      ),
+    ).toEqual(runs ? [id] : [])
   })
 })
