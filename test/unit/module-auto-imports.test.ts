@@ -56,8 +56,8 @@ describe('module auto-import surface', () => {
     ])
   })
 
-  // Catches a moved or renamed alias target: consumer imports of `#convex/api` and
-  // `#convex/server` would stop resolving (Nuxt derives the tsconfig paths from these aliases).
+  // Catches a moved or renamed alias target: consumer imports of `#convex/api`,
+  // `#convex/dataModel` and `#convex/server` would stop resolving (Nuxt derives the tsconfig paths from these aliases).
   it('registers the #convex runtime aliases', () => {
     const nuxt = { options: { alias: {} } }
     const resolver = {
@@ -68,10 +68,12 @@ describe('module auto-import surface', () => {
       nuxt,
       resolver,
       convexApiAlias: '/app/convex/_generated/api',
+      convexDataModelAlias: '/app/convex/_generated/dataModel',
     })
 
     expect(nuxt.options.alias).toEqual({
       '#convex/api': '/app/convex/_generated/api',
+      '#convex/dataModel': '/app/convex/_generated/dataModel',
       '#convex/server': './runtime/server/index',
     })
     expect(getMissingConvexApiTemplateContents()).toContain('createMissingConvexApiProxy')

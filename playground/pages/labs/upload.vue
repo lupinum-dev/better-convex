@@ -2,7 +2,7 @@
 import { isConvexCallError } from '@lupinum/better-convex-nuxt/errors'
 
 import { api } from '#convex/api'
-import type { Id } from '~/convex/_generated/dataModel'
+import type { Id } from '#convex/dataModel'
 
 definePageMeta({
   layout: 'sidebar',
