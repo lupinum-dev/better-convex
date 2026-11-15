@@ -366,8 +366,8 @@ export const mutants: Mutant[] = [
     id: 'C14-action-one-token',
     guards: 'C14',
     file: 'packages/functions/src/functions.ts',
-    find: '            { spent: paid },',
-    replace: '            { spent: [] },',
+    find: '              { spent: paid, seen },',
+    replace: '              { spent: [], seen },',
     kills: [
       `${F}/doors.test.ts > limit on internal mutation run by a public action: 2 calls pass, the 3rd is RATE_LIMITED`,
     ],
