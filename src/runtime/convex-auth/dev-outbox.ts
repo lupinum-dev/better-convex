@@ -19,8 +19,8 @@ export function isLoopbackSiteUrl(siteUrl: string | undefined): boolean {
 /**
  * Local development only: writes each auth email to the Convex function log so
  * a new project can sign in before any mail provider exists. The factory uses
- * it only when no `email` hook is set and `SITE_URL` is a loopback origin; on
- * any other deployment the log must never hold codes or links.
+ * it only when `SITE_URL` is a loopback origin, alone or before the app's
+ * `email` hook; on any other deployment the log must never hold codes or links.
  */
 export async function devOutbox(message: BetterConvexAuthEmail): Promise<void> {
   const secret =

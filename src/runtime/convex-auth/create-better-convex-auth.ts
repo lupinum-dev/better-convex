@@ -1084,6 +1084,14 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
   }
 }
 
+/** Local development with an `email` hook: log the mail, then hand it to the hook. */
+function withDevOutbox(appDeliver: (message: BetterConvexAuthEmail) => Promise<void>) {
+  return async (message: BetterConvexAuthEmail): Promise<void> => {
+    await devOutbox(message)
+    await appDeliver(message)
+  }
+}
+
 /** Delivery when there is no `email` hook and `SITE_URL` is not a loopback origin. */
 async function missingEmailHook(message: BetterConvexAuthEmail): Promise<never> {
   throw new Error(
@@ -1317,9 +1325,15 @@ export function createBetterConvexAuthOwned<
           })
         : undefined
       stage = 'AUTH_CONFIG_OPTIONS_INVALID'
-      // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
+      // The app's hook; else a delivery that fails with a clear error. On a loopback SITE_URL the
+      // dev outbox also logs each mail, before the hook runs, so local work shows the code even
+      // when the hook only queues it or has no provider key.
       const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
-      const deliver = appDeliver ?? (localDevelopment ? devOutbox : missingEmailHook)
+      const deliver = localDevelopment
+        ? appDeliver
+          ? withDevOutbox(appDeliver)
+          : devOutbox
+        : (appDeliver ?? missingEmailHook)
       const emailAndPassword = options.emailAndPassword
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
@@ -1555,7 +1569,7 @@ export function createBetterConvexAuthOwned<
                 ...(appDeliver
                   ? {
                       sendDeleteAccountVerification: async ({ user, url, token }) =>
-                        appDeliver({
+                        deliver({
                           type: 'delete-account',
                           to: user.email,
                           url,
