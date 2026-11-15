@@ -23,7 +23,6 @@ import {
   type TableNamesInDataModel,
 } from 'convex/server'
 import {
-  convexToJson,
   v,
   type GenericId,
   type Infer,
@@ -118,6 +117,16 @@ export interface Plan {
 }
 
 /**
+ * Writes the values plain JSON cannot hold so a person can read them: an int64 as its decimal
+ * string (JSON.stringify throws on a BigInt) and bytes as their size (it would write `{}`).
+ */
+function forPeople(_key: string, value: unknown) {
+  if (typeof value === 'bigint') return value.toString()
+  if (value instanceof ArrayBuffer) return `<${value.byteLength} bytes>`
+  return value
+}
+
+/**
  * The plan of a call: from the operation's `plan`, or, without one, the action and input as JSON
  * and the rows the input names. It reads with `planReader` and gets a frozen copy of the input,
  * so it can change neither (release review 4: a summary changed the input after it was written).
@@ -132,14 +141,8 @@ export async function planOf(
     idsIn(jsonOf(v.object(op.args)), input)
       .filter(({ table, id }) => !table.startsWith('_') && ctx.db.normalizeId(table, id) !== null)
       .map(({ id }) => id)
-  // Convex's own JSON form: plain JSON cannot hold an int64 (it throws) or bytes (it writes `{}`).
-  // The input passed the args validator, so it is a Convex value.
-  if (!op.plan) {
-    return {
-      summary: `${op.action} ${JSON.stringify(convexToJson(input as Value))}`,
-      rows: named(),
-    }
-  }
+  if (!op.plan)
+    return { summary: `${op.action} ${JSON.stringify(input, forPeople)}`, rows: named() }
   const plan = (await op.plan(planReader(ctx), frozen(input))) as unknown
   if (
     !plan ||
