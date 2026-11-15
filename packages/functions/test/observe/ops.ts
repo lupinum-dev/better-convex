@@ -69,6 +69,15 @@ export const sweep = job({
   },
 })
 
+/** A job that renames through an internal mutation. */
+export const sweepVia = job({
+  name: 'sweepVia',
+  args: { projectId: v.id('projects'), name: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(ref('ops:renameInner'), args as never)
+  },
+})
+
 export const fetchSite = internalAction({
   args: {},
   handler: async () => null,

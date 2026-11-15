@@ -43,6 +43,8 @@ async function setup() {
   return { t, ...ids, as, person }
 }
 
+const system = (job: string) => ({ key: `system:${job}`, kind: 'system', door: 'job', job })
+
 // Catches: an event that misses who acted, where, with which result, or the fields the handler added.
 test('a call writes one event with actor, tenant, outcome, code and fields', async () => {
   const { t, as, person, ann, vic, orgId, projectId } = await setup()
@@ -87,7 +89,8 @@ test('a call writes one event with actor, tenant, outcome, code and fields', asy
   ]
   for (const [name, call, expected] of calls) {
     lines = []
-    await call().catch(() => {})
+    if (expected.outcome === 'error') await expect(call(), name).rejects.toThrow()
+    else await call()
     expect(events(), name).toEqual([
       {
         type: 'better-convex.call',
@@ -156,7 +159,6 @@ test('public actions, jobs and internal actions write one event each', async () 
     .catch(() => {})
   await t.mutation(fn('ops:sweep'), {})
   await t.action(fn('ops:fetchSite'), { actingAs: { kind: 'system', job: 'nightly' }, input: {} })
-  const system = (job: string) => ({ key: `system:${job}`, kind: 'system', door: 'job', job })
   expect(events()).toEqual([
     {
       type: 'better-convex.call',
@@ -223,20 +225,30 @@ test('a field JSON cannot hold is left out and never fails the call', async () =
   await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Tallied' })
 })
 
-// Catches: work the system did reported as `written: 0`: its raw `db` counts nothing.
+// Catches: work the system did reported as `written: 0`, also through a job's inner call, which
+// hands back an empty list: its raw `db` counts nothing.
 test('work run as the system shows no written count', async () => {
   const { t, orgId, projectId } = await setup()
   await t.mutation(fn('ops:renameInner'), {
     actingAs: { kind: 'system', job: 'nightly' },
     input: { projectId, name: 'Nightly' },
   })
+  // A job's own inner call hands back an empty list, which is no count of 0.
+  await t.mutation(fn('ops:sweepVia'), { projectId, name: 'Swept' })
   expect(events()).toEqual([
     {
       type: 'better-convex.call',
       action: 'projects.rename',
       kind: 'mutation',
-      actor: { key: 'system:nightly', kind: 'system', door: 'job', job: 'nightly' },
+      actor: system('nightly'),
       tenant: orgId,
+      outcome: 'ok',
+    },
+    {
+      type: 'better-convex.call',
+      action: 'job.sweepVia',
+      kind: 'mutation',
+      actor: system('sweepVia'),
       outcome: 'ok',
     },
   ])
