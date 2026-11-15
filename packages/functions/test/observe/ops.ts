@@ -91,7 +91,8 @@ export const renameMiddle = internalMutation({
   action: 'projects.rename',
   args: { projectId: v.id('projects'), name: v.string() },
   handler: async (ctx, args) => {
-    ctx.log.set({ project: { id: args.projectId } })
+    // `$set`: a field name a Convex value refuses, as PostHog names its own properties.
+    ctx.log.set({ project: { id: args.projectId }, $set: { plan: 'pro' } })
     await ctx.runMutation(ref('ops:renameInner'), args as never)
   },
 })
@@ -101,5 +102,18 @@ export const renameInner = internalMutation({
   args: { projectId: v.id('projects'), name: v.string() },
   handler: async (ctx, { projectId, name }) => {
     await ctx.db.patch(projectId, { name })
+  },
+})
+
+/** Adds a BigInt (as a `v.int64()` field holds) to the event, then renames or refuses. */
+export const tally = mutation({
+  action: 'projects.rename',
+  args: { projectId: v.id('projects'), refuse: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { projectId, refuse }) => {
+    ctx.log.set({ project: { id: projectId }, count: 42n } as never)
+    if (refuse) fail('INVALID_INPUT', 'Refused on purpose.')
+    await ctx.db.patch(projectId, { name: 'Tallied' })
+    return null
   },
 })

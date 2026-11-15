@@ -189,7 +189,8 @@ test('public actions, jobs and internal actions write one event each', async () 
 })
 
 // Catches: an inner call reporting "ok" and rows written when the transaction it ran in rolled
-// back, or the outer event missing the rows or fields of its inner calls, two levels down.
+// back, the outer event missing the rows or fields of its inner calls, two levels down, or an
+// inner call failing because a field name is one a Convex value refuses.
 test("a call run inside another call's transaction writes no event of its own", async () => {
   const { t, as, person, ann, orgId, projectId } = await setup()
   await as('ann').mutation(fn('ops:renameVia'), { projectId, name: 'Via', thenFail: false })
@@ -197,12 +198,48 @@ test("a call run inside another call's transaction writes no event of its own", 
     .mutation(fn('ops:renameVia'), { projectId, name: 'Lost', thenFail: true })
     .catch(() => {})
   const base = { type: 'better-convex.call', action: 'projects.rename', kind: 'mutation' }
-  const fields = { project: { id: projectId } }
+  const fields = { project: { id: projectId }, $set: { plan: 'pro' } }
   expect(events()).toEqual([
     { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1, fields },
     { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT', fields },
   ])
   await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Via' })
+})
+
+// Catches: a log field JSON cannot hold failing a call that succeeded, or hiding a refusal's code.
+test('a field JSON cannot hold is left out and never fails the call', async () => {
+  const { t, as, person, ann, orgId, projectId } = await setup()
+  await as('ann').mutation(fn('ops:tally'), { projectId, refuse: false })
+  const refused = await as('ann')
+    .mutation(fn('ops:tally'), { projectId, refuse: true })
+    .catch((error: { data?: { code?: string } }) => error.data?.code)
+  expect(refused).toBe('INVALID_INPUT')
+  const base = { type: 'better-convex.call', action: 'projects.rename', kind: 'mutation' }
+  const fields = { project: { id: projectId } }
+  expect(events()).toEqual([
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'ok', written: 1, fields },
+    { ...base, actor: person(ann), tenant: orgId, outcome: 'error', code: 'INVALID_INPUT', fields },
+  ])
+  await expect(t.run((ctx) => ctx.db.get(projectId))).resolves.toMatchObject({ name: 'Tallied' })
+})
+
+// Catches: work the system did reported as `written: 0`: its raw `db` counts nothing.
+test('work run as the system shows no written count', async () => {
+  const { t, orgId, projectId } = await setup()
+  await t.mutation(fn('ops:renameInner'), {
+    actingAs: { kind: 'system', job: 'nightly' },
+    input: { projectId, name: 'Nightly' },
+  })
+  expect(events()).toEqual([
+    {
+      type: 'better-convex.call',
+      action: 'projects.rename',
+      kind: 'mutation',
+      actor: { key: 'system:nightly', kind: 'system', door: 'job', job: 'nightly' },
+      tenant: orgId,
+      outcome: 'ok',
+    },
+  ])
 })
 
 // Catches: events from an app that did not turn `observe` on, or `ctx.log.set` failing there.

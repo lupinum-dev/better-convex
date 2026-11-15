@@ -11,9 +11,10 @@ export type LogValue =
 
 /**
  * Fields for the event of this call, with `defineFunctions({ observe: true })`. Later calls to
- * `set` replace a field of the same name. Without `observe`, `set` does nothing. Write IDs and
- * codes, never values a person typed (names, amounts, email addresses): log streams copy every
- * line to another service.
+ * `set` replace a field of the same name. A value JSON cannot hold (a BigInt) is left out, so a
+ * field never fails the call. Without `observe`, `set` does nothing. Write IDs and codes, never
+ * values a person typed (names, amounts, email addresses): log streams copy every line to
+ * another service.
  */
 export interface CallLog {
   set(fields: Record<string, LogValue>): void
@@ -24,20 +25,37 @@ type ActorField = ReturnType<typeof actorRecord> | { kind: 'person' | 'agent' | 
 
 /** What the event of one call knows so far. The wrapper fills it in as the call learns it. */
 export interface Seen {
+  /** The action, when the call learns it only while it runs (`approve` reads it from the request). */
+  action?: string
   actor?: ActorField
+  /** The key of the agent whose request a person decides: `actor` is the person. */
+  agent?: string
   tenant?: string
   approval?: string
   written?: ReadonlySet<string>
   /** Rows the calls it ran in its own transaction wrote: they write no event, so this one counts them. */
   innerWritten?: Set<string>
   readonly fields: Record<string, LogValue>
+  /**
+   * How a call that returned ended, when the work did not run: it waits for a person, a person
+   * declined it, or approved work failed with this code while `approve` itself succeeded.
+   */
+  outcome?: 'pending' | 'declined' | { code: string }
 }
 
 export const newSeen = (): Seen => ({ fields: {} })
 
 export const logOf = (seen: Seen): CallLog => ({
   set: (fields) => {
-    Object.assign(seen.fields, fields)
+    for (const [key, value] of Object.entries(fields)) {
+      // A copy as JSON: the line is written later, and a value that cannot be written fails here, not there.
+      try {
+        const json = JSON.stringify(value)
+        if (json !== undefined) seen.fields[key] = JSON.parse(json) as LogValue
+      } catch {
+        // A BigInt or a cycle: left out.
+      }
+    }
   },
 })
 
@@ -83,29 +101,48 @@ export function callEvent(
   seen: Seen,
   failure?: { error: unknown },
 ) {
-  const code = failure && codeOf(failure.error)
+  const settled = seen.outcome
+  const code = failure
+    ? codeOf(failure.error)
+    : typeof settled === 'object'
+      ? settled.code
+      : undefined
+  const outcome = failure || typeof settled === 'object' ? 'error' : (settled ?? 'ok')
   const rows =
     seen.written || seen.innerWritten
       ? new Set([...(seen.written ?? []), ...(seen.innerWritten ?? [])]).size
       : undefined
   return {
     type: 'better-convex.call',
-    ...(action !== undefined && { action }),
+    ...((seen.action ?? action) !== undefined && { action: seen.action ?? action }),
     kind,
     ...(seen.actor && { actor: seen.actor }),
+    ...(seen.agent !== undefined && { agent: seen.agent }),
     ...(seen.tenant !== undefined && { tenant: seen.tenant }),
-    outcome: failure ? 'error' : 'ok',
+    outcome,
     ...(code !== undefined && { code }),
-    // A failed call keeps none of its writes, so only a call that succeeded counts them.
-    ...(!failure && kind !== 'query' && rows !== undefined && { written: rows }),
+    // A failed call keeps none of its writes, so only a call that did its work counts them.
+    ...(outcome === 'ok' && kind !== 'query' && rows !== undefined && { written: rows }),
     ...(seen.approval !== undefined && { approval: seen.approval }),
     ...fieldsOf(seen),
   }
 }
 
-/** The fields the handler added, if any: for this call's event, or handed back to the caller's. */
+/** The fields the handler added, if any, for this call's event. */
 export const fieldsOf = (seen: Seen): { fields?: Record<string, LogValue> } =>
   Object.keys(seen.fields).length > 0 ? { fields: seen.fields } : {}
+
+/**
+ * The fields of an inner call, handed back to its caller's event: as JSON text, because a
+ * Convex value refuses field names a log may use (`größe`, `$set`).
+ */
+export const handedFields = (seen: Seen): { fields?: string } =>
+  Object.keys(seen.fields).length > 0 ? { fields: JSON.stringify(seen.fields) } : {}
+
+/** Adds the fields an inner call handed back to this call's. */
+export function tookFields(seen: Seen, fields: string): void {
+  Object.assign(seen.fields, JSON.parse(fields) as Record<string, LogValue>)
+}
 
 /** Writes the event of a call that failed. A console line survives the rollback of a failed mutation. */
 export function logFailure(kind: CallKind, action: string | undefined, seen: Seen, error: unknown) {

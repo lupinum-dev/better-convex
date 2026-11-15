@@ -46,15 +46,16 @@ import { defineErasure, type ErasureEntry, type ErasureMap } from './erasure'
 import { guarded, OPERATION } from './guard'
 import { rateLimited, takeToken } from './limits'
 import {
-  fieldsOf,
+  handedFields,
   logFailure,
   logOf,
   newSeen,
   observed,
   sawActing,
   sawActor,
+  tookFields,
   type CallLog,
-  type LogValue,
+  type CallKind,
   type Seen,
 } from './observe'
 import {
@@ -725,7 +726,8 @@ export function defineFunctions<
       }
     }
     const written = new Set<string>()
-    seen.written = written
+    // The system writes through the raw `db`, which counts nothing: its event shows no `written`, not 0.
+    if (actor.kind !== 'system') seen.written = written
     const db = checkedDb(ctx.db as MCtx['db'], rules, {
       // Custom rules see the actor as handlers do, without the approval's credentials (class 10).
       actor: shown(actor),
@@ -899,7 +901,7 @@ export function defineFunctions<
               const { result, written, fields } = out as {
                 result: unknown
                 written?: string[]
-                fields?: Record<string, LogValue>
+                fields?: string
               }
               if (written) {
                 collect?.(written)
@@ -907,7 +909,7 @@ export function defineFunctions<
                   for (const id of written) (chain.seen.innerWritten ??= new Set()).add(id)
               }
               // An inner call writes no event: its fields join this call's.
-              if (fields && chain?.seen) Object.assign(chain.seen.fields, fields)
+              if (fields && chain?.seen) tookFields(chain.seen, fields)
               return result
             },
           }
@@ -1258,7 +1260,7 @@ export function defineFunctions<
           returns: v.object({
             operation: v.literal(operationMark),
             result: spec.returns,
-            fields: v.optional(v.record(v.string(), v.any())),
+            fields: v.optional(v.string()),
           }),
         }),
         handler: async (
@@ -1283,7 +1285,7 @@ export function defineFunctions<
             return {
               operation: operationMark,
               result: settle(await spec.handler(checked as never, input)),
-              ...(inner && fieldsOf(seen)),
+              ...(inner && handedFields(seen)),
             }
           })
         },
@@ -1305,7 +1307,7 @@ export function defineFunctions<
             operation: v.literal(operationMark),
             result: spec.returns,
             written: v.optional(v.array(v.string())),
-            fields: v.optional(v.record(v.string(), v.any())),
+            fields: v.optional(v.string()),
           }),
         }),
         handler: async (
@@ -1336,7 +1338,7 @@ export function defineFunctions<
             // In its caller's transaction, this call writes no event: the caller's event counts its
             // rows, also those of the calls it ran itself, and shows its fields.
             const handBack = inner
-              ? { written: [...written, ...(seen.innerWritten ?? [])], ...fieldsOf(seen) }
+              ? { written: [...written, ...(seen.innerWritten ?? [])], ...handedFields(seen) }
               : {}
             // Called from another operation's transaction: that call writes the one audit row, with these ids.
             if (nested)
@@ -1694,7 +1696,7 @@ export function defineFunctions<
             })
             // Called through ctx.run*, answer in the envelope that tells an internal operation from a raw function.
             return who
-              ? { operation: operationMark, result: null, ...(inner && fieldsOf(seen)) }
+              ? { operation: operationMark, result: null, ...(inner && handedFields(seen)) }
               : null
           })
         },
@@ -1715,7 +1717,23 @@ export function defineFunctions<
     action,
     authorizeAction,
   }
-  kits.set(fns, { auth, person, agent, authorize, lib, tenants, roleOf: config.roleOf })
+  kits.set(fns, {
+    auth,
+    person,
+    agent,
+    authorize,
+    lib,
+    tenants,
+    roleOf: config.roleOf,
+    /** Runs one call of the agents package and writes its event, as the calls here do. */
+    observed: <T>(
+      kind: CallKind,
+      action: string | undefined,
+      seen: Seen,
+      run: () => Promise<T>,
+      inner = false,
+    ) => observed(observe && !inner, kind, action, seen, run),
+  })
   type Result = typeof fns &
     (Erasure extends undefined
       ? unknown
