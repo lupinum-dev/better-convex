@@ -165,10 +165,11 @@ type ReviewedAnonymousOptions = Pick<
   | 'generateRandomEmail'
 > & {
   /**
-   * New guests per verified client address: a burst of `max`, then one more
-   * every `window / max` seconds (a bucket that refills, not a fixed window).
-   * Default `{ window: 3600, max: 10 }`: 10 at once, then one every 6 minutes.
-   * `window` is 60 to 86,400 seconds, `max` is 1 to 1,000.
+   * New guests per verified client address: a bucket of `max` that refills
+   * one every `window / max` seconds (not a fixed window). Default
+   * `{ window: 3600, max: 10 }`: 10, refilled one every 6 minutes. Better
+   * Auth's own 3 sign-ins per 10 seconds still apply on top. `window` is 60 to
+   * 86,400 seconds, `max` is 1 to 1,000.
    */
   readonly rateLimit?: GuestSignInLimit
 }

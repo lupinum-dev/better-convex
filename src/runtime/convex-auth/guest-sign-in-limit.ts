@@ -15,7 +15,7 @@ export interface GuestSignInLimit {
   readonly max: number
 }
 
-/** A burst of ten new guests per client address, then one every 6 minutes. */
+/** A bucket of ten new guests per client address, refilled one every 6 minutes. */
 export const GUEST_SIGN_IN_LIMIT_DEFAULT: GuestSignInLimit = Object.freeze({
   window: 3600,
   max: 10,
