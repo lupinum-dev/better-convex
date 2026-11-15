@@ -99,7 +99,15 @@ type BetterConvexUserCreateDecision =
     }
 
 // Better Auth assigns the user id after this hook, so the pending user has none.
-type BetterConvexPendingUser = Readonly<Pick<User, 'email' | 'emailVerified' | 'image' | 'name'>>
+type BetterConvexPendingUser = Readonly<
+  Pick<User, 'email' | 'emailVerified' | 'image' | 'name'> & {
+    /**
+     * `true` for a guest that `experimental.anonymous` creates. A guest has a
+     * generated address that nobody proved. Always `false` without that option.
+     */
+    isAnonymous: boolean
+  }
+>
 
 const reviewedPasswordOptionKeys = [
   'disableSignUp',
@@ -995,6 +1003,7 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
           emailVerified: user.emailVerified,
           image: user.image,
           name: user.name,
+          isAnonymous: user.isAnonymous === true,
         }),
       })
     } catch (error) {
