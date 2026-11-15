@@ -260,6 +260,7 @@ test('work run as the system shows no written count', async () => {
       kind: 'mutation',
       actor: system('sweepVia'),
       outcome: 'ok',
+      trace: expect.any(String),
     },
   ])
 })
