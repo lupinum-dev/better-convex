@@ -66,7 +66,7 @@ mode too: every browser call path uses `normalizeConvexError`; SSR only adds the
 ## Layer 2 contract (draft, needs review before `obs/event` starts)
 
 ```ts
-defineFunctions({ …, observe: true })   // off by default; true = one JSON console line per call
+defineFunctions({ …, observe: true })   // off by default; true = one JSON console line per transaction, a query's only when it fails
 handler: (ctx) => { ctx.log.set({ document: { id } }) }
 ```
 
