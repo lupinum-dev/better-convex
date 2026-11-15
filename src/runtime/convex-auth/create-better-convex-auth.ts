@@ -1,6 +1,13 @@
 import type { GenericEndpointContext } from '@better-auth/core'
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
-import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
+import type {
+  Auth,
+  AuthContext,
+  BetterAuthOptions,
+  BetterAuthPlugin,
+  InferAPI,
+  User,
+} from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
 import {
   anonymous,
@@ -441,6 +448,23 @@ export interface BetterConvexAuth<
   readonly getAuth: (
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
+  /**
+   * Delete another user from a Convex function: an admin removal, an erasure
+   * request, a guest cleanup. This is Better Auth's own user deletion, the one
+   * its `/delete-user` route runs: the user's sessions stop working at once,
+   * and the sessions, linked accounts and auth user are deleted with the app's
+   * `onDelete` triggers, so a user projection erases the app user. Sessions
+   * after the first 64 are deleted later, without `onDelete` triggers. A user
+   * that does not exist is not an error.
+   *
+   * It checks no permission. Call it from an internal function, after your
+   * own check of who may delete whom; never pass a user ID from the browser
+   * without that check. It works without `deleteUser.enabled` and does not run
+   * `deleteUser.beforeDelete`, the fresh-session check or the `delete-account`
+   * email. In a mutation it is one transaction; in an action each step is its
+   * own transaction, and calling it again finishes a deletion that stopped.
+   */
+  readonly deleteUser: (ctx: WritableAuthCtx<DataModel>, userId: string) => Promise<void>
   /**
    * The access verifier for `handleMcpRequest`: keys from the component, the
    * strict token checks, and one live grant query per token. With `oauth.mcp`,
@@ -1672,6 +1696,19 @@ export function createBetterConvexAuthOwned<
     getUser,
     requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
+    deleteUser: async (ctx: WritableAuthCtx<DataModel>, userId: string) => {
+      if (!isWritableAuthCtx(ctx)) throw new Error('AUTH_DELETE_USER_REQUIRES_WRITABLE_CONTEXT')
+      if (typeof userId !== 'string' || userId.length === 0) {
+        throw new TypeError('AUTH_DELETE_USER_ID_INVALID')
+      }
+      // The public instance types `$context` as unknown. Checked against Better Auth 1.7.16:
+      // it resolves to its AuthContext, and `internalAdapter.deleteUser` is the deletion that
+      // `/delete-user` runs, through this library's adapter and trigger handles.
+      const context = (await (
+        await createAuth(ctx)
+      ).$context) as Pick<AuthContext, 'internalAdapter'>
+      await context.internalAdapter.deleteUser(userId)
+    },
     createMcpAccessVerifier,
     mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
       const profile = requireMcp()
