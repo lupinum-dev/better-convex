@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- [#376](https://github.com/lupinum-dev/better-convex/pull/376) [`76961c5`](https://github.com/lupinum-dev/better-convex/commit/76961c5250f945d5e9cdc567a61c9317e8113905) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `auth.deleteUser(ctx, userId)` to delete another user from a Convex mutation or action.
+  
+  It runs Better Auth's own user deletion with the app's `onDelete` triggers, so a user projection erases the app user. It checks no permission: call it from an internal function after your own check.
+
+- [#374](https://github.com/lupinum-dev/better-convex/pull/374) [`fe8b862`](https://github.com/lupinum-dev/better-convex/commit/fe8b862928117cf0cbf0aa869092ba89dd328fd5) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add the `#convex/dataModel` alias for the generated data model types.
+  
+  App and Nitro code can write `import type { Id } from '#convex/dataModel'` instead of `~~/convex/_generated/dataModel`.
+
+- [#375](https://github.com/lupinum-dev/better-convex/pull/375) [`9fc2fb6`](https://github.com/lupinum-dev/better-convex/commit/9fc2fb6ffb0cd963353248a999337c236ebe8ebb) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Change the dev outbox to also log auth email when the `email` hook is set, on a loopback `SITE_URL`.
+  
+  The library writes the log line first and then calls the hook, so local work shows the code even when the hook has no provider key. On any other `SITE_URL` nothing is logged, as before.
+
+- [#361](https://github.com/lupinum-dev/better-convex/pull/361) [`9913cb8`](https://github.com/lupinum-dev/better-convex/commit/9913cb855a15df679fb25b5c7e12bfcdbd0dc017) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `why` and `fix` to failures, and the Convex request ID to `ConvexCallError`.
+  
+  `fail(code, message, { why, fix })` tells the caller why a call failed and what to do; `NOT_FOUND` and `FAILED` take no help.
+  `ConvexCallError` has `why`, `fix` and `requestId`. The request ID matches the Convex logs, so a user can quote it.
+  MCP tool failures carry the same `why` and `fix`.
+
+- [#373](https://github.com/lupinum-dev/better-convex/pull/373) [`1008545`](https://github.com/lupinum-dev/better-convex/commit/100854593f31194678aae7fa3b37d796c165e9a8) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add a limit for new guests: a bucket of 10 per client address that refills one every 6 minutes, by default.
+  
+  Set it with `experimental.anonymous.rateLimit: { window, max }` (`window` 60 to 86,400 seconds, `max` 1 to 1,000).
+  An IPv6 address counts by its /64 network, as in Better Auth's own limits.
+
+- [#371](https://github.com/lupinum-dev/better-convex/pull/371) [`9832a9d`](https://github.com/lupinum-dev/better-convex/commit/9832a9d2ef8f878ff076bf0aff345631c6ee233d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `user.isAnonymous` to the `beforeUserCreate` callback, so an invite-only app can let guests from `experimental.anonymous` through and still check everyone else. It is always `false` without that option.
+
+- [#372](https://github.com/lupinum-dev/better-convex/pull/372) [`68bde06`](https://github.com/lupinum-dev/better-convex/commit/68bde06b081360522571e36042b994a5a130dd09) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `serverConvex(event).fetch(path)`, which reads one of your Convex HTTP actions as the caller and returns the upstream `Response` with its body as a stream, for private file downloads from your own origin.
+  
+  It accepts only a path on the deployment's HTTP actions host and only `GET` or `HEAD`, follows the `auth` option like `query`, aborts with the request, and does not follow redirects. The body is not capped by `server.maxResponseBytes`.
+
+### Patch Changes
+
+- Updated dependencies [[`9913cb8`](https://github.com/lupinum-dev/better-convex/commit/9913cb855a15df679fb25b5c7e12bfcdbd0dc017)]:
+  - @lupinum/better-convex-vue@1.1.0
+
 ## 1.0.2
 
 ### Patch Changes
