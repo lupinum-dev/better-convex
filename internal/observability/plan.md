@@ -242,3 +242,25 @@ Findings:
   reindented code (C14-action-hands-over, S7-internal-action, C10-shown-operation), the review fix
   (S-A-audit-nested-no-row) and the trace chain (C14-action-one-token, #364). Find texts updated;
   each row passes locally, and all 443 rows match once on every branch.
+- Layer 5 (2026-11-12, `obs/showcase`): `starters/mcp-oauth-agent` turns on `observe`, sets the
+  project in the rename event, gives the name and rename-conflict refusals `why`/`fix`, and shows
+  message, why, fix and the request ID. The conflict text no longer carries the project name.
+  After the release, a PR pins the starters to functions/agents 0.2.0 and nuxt 1.1.0 (as #348).
+
+## Release review (Fable 5.2, 2026-11-15): agreed fix plan
+
+Proof tests reproduced: agent tool calls, refusals and approvals write 0 lines; a system-run rename says `written: 0`; `ctx.log.set` keys like `größe`/`$set` fail inner calls, a BigInt fails every call.
+
+Decisions (code):
+
+- One observe wrapper in the functions kit, used by every agent-reachable function (tool functions, check_approval, uploads, approve, decline). It sits outermost, so `agent()`, input checks and `rateLimit` (AGENT_DISABLED, RATE_LIMITED) are inside. `seen` goes to all three `authorize` calls. Only `housekeeping` (cron) writes no line; the docs say so.
+- `approve` writes the only line of its transaction (as #362). A tool function called with `approval` or `renew` (askAgain after STALE) is inner: no line, it hands back `written` and `fields` through two optional fields on its returns validator.
+- approve's line: `actor` is the person who called it, `agent` is the agent's key, `approval` the request ID, `action` the operation's action; outcome/code are the work's (`ran.ok` / `failure.code`). If approve fails after the work, the wrapper writes `error`.
+- A request that waits for a person: `outcome: "pending"`.
+- System actor: no `written` field (not 0). Docs: jobs never show `written`.
+- `ctx.log.set`: clean values in `set` (JSON-safe only); inner calls hand fields back as a JSON string; both console writes cannot throw.
+- Test: expected lines as a table built from `Object.keys(tools.functions)` and the approval functions, so a new tool without a line fails.
+  Decisions (docs): caught inner refusal (finding 4), `ok` before Convex validates the return value or rejects arguments (5), approved work loses why/fix (6), downgrade after `trace` breaks pending jobs (7, in the changeset).
+  Release: #367 stays open; after the release it gets the new pins and merges. Second review of the finding-1 diff before merge. Scenario 2 (agent refused → line) once on Luis dev.
+
+Status (2026-11-15): built. obs/event `fix(agents): write call events for agent calls, and never fail a call over its log` (tests: agents door/events.test.ts, two new observe tests; each fails without its fix). obs/trace: changeset line on downgrade. obs/docs: log streams searches by agent key and AGENT_DISABLED, error-handling note on approved failures. Side find, not fixed here: `planOf` summary does `JSON.stringify(input)` and throws on a `v.int64()` argument (on main since 2026-10-08).

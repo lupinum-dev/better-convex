@@ -13,7 +13,11 @@ const project = v.object({ id: v.id('projects'), name: v.string() })
 /** A name a person can read: one line, no invisible characters, 1 to 100 characters. */
 function projectName(name: string) {
   const clean = oneLine(name, 101)
-  if (!clean || clean.length > 100) fail('INVALID_INPUT', 'name: use 1 to 100 visible characters.')
+  if (!clean || clean.length > 100)
+    fail('INVALID_INPUT', 'This project name does not fit.', {
+      why: 'Project names appear in lists and in agent tool results, on one line.',
+      fix: 'Use 1 to 100 visible characters.',
+    })
   return clean
 }
 
@@ -112,15 +116,18 @@ export const rename = mutation({
     },
   },
   handler: async (ctx, { projectId, name, from }) => {
+    // The project's ID in this call's log line, also when the rename is refused.
+    ctx.log.set({ project: { id: projectId } })
     const clean = projectName(name)
     const current = await ctx.db.get(projectId)
     if (!current) fail('NOT_FOUND', 'No projects with this ID.')
-    // Two people (or agents) renaming at once: the second learns about the first instead of overwriting it.
+    // Two people (or agents) renaming at once: the second learns about the first instead of
+    // overwriting it. The text names no project: error texts reach the logs as they are.
     if (from !== undefined && current.name !== from) {
-      fail(
-        'CONFLICT',
-        `The project is now called "${current.name}". Check that the new name still fits.`,
-      )
+      fail('CONFLICT', 'Someone renamed this project since you last saw it.', {
+        why: 'Nothing changed, so their name is kept.',
+        fix: 'Read the project again, check that your new name still fits, then rename it.',
+      })
     }
     await ctx.db.patch(projectId, { name: clean })
     return { id: projectId, name: clean }

@@ -45,6 +45,13 @@ It follows the Better Convex agents path from end to end:
 - Every agent write appears in the organization's activity feed on the start
   page. Known failures reach the model as a code and a short message; every
   other failure becomes a generic one.
+- A refused call tells the person why and what to do (`fail(…, { why, fix })`
+  in `convex/projects.ts`), and every failure shows a reference: the Convex
+  request ID. Agents receive the same `why` and `fix`.
+- Each call writes one JSON log line (`observe: true` in `convex/functions.ts`):
+  the action, the person or agent, the organization, the result and the code.
+  Connect a Convex log stream to search it by the reference a person quotes. See
+  [Log streams and PostHog](https://better-convex.lupinum.com/docs/operations/log-streams).
 
 `users` is a rebuildable projection of the Better Auth user. Organizations,
 memberships, projects, approvals and activity are app-owned Convex state. OAuth
