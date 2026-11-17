@@ -7,7 +7,11 @@ import type {
   UseConvexPaginatedQueryOptions,
   UseConvexPaginatedQueryState,
 } from '../../packages/vue/src/use-paginated-query'
-import type { UseConvexQueryOptions, UseConvexQueryState } from '../../packages/vue/src/use-query'
+import type {
+  UseConvexQueryOptions,
+  UseConvexQueryParameters,
+  UseConvexQueryState,
+} from '../../packages/vue/src/use-query'
 
 declare const useConvexQuery: typeof import('../../packages/vue/src/use-query').useConvexQuery
 declare const useConvexPaginatedQuery: typeof import('../../packages/vue/src/use-paginated-query').useConvexPaginatedQuery
@@ -130,6 +134,30 @@ function typeContracts() {
   void useConvexPaginatedQuery(wrongPaginatedResult, {}, { initialNumItems: 10 })
 }
 
+// The docs' pass-through wrapper: it forwards the argument slot untouched, so a wrapped call
+// keeps the exact argument rules of useConvexQuery.
+function useWrappedQuery<Query extends FunctionReference<'query'>>(
+  query: Query,
+  ...parameters: UseConvexQueryParameters<Query>
+) {
+  return useConvexQuery(query, ...parameters)
+}
+
+function wrapperContracts() {
+  expectTypeOf(useWrappedQuery(requiredQuery, { id: 'note' }).data.value).toEqualTypeOf<
+    string | undefined
+  >()
+  void useWrappedQuery(requiredQuery, 'skip', { auth: 'none' })
+  void useWrappedQuery(emptyQuery)
+  void useWrappedQuery(optionalQuery, {})
+  // @ts-expect-error required query arguments cannot be omitted through the wrapper
+  void useWrappedQuery(requiredQuery)
+  // @ts-expect-error the wrapper keeps argument types
+  void useWrappedQuery(requiredQuery, { id: 1 })
+  // @ts-expect-error exactly-empty args still reject unknown fields through the wrapper
+  void useWrappedQuery(emptyQuery, { extra: 1 })
+}
+
 describe('better-convex-vue query type contracts', () => {
   it('uses the minimal readonly state and exact argument optionality', () => {
     expectTypeOf<keyof UseConvexQueryOptions>().toEqualTypeOf<
@@ -173,5 +201,6 @@ describe('better-convex-vue query type contracts', () => {
       UseConvexQueryState<string>['blockedBy']
     >()
     expectTypeOf(typeContracts).toBeFunction()
+    expectTypeOf(wrapperContracts).toBeFunction()
   })
 })

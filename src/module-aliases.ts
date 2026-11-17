@@ -16,9 +16,13 @@ export function registerConvexAliases(options: {
   nuxt: NuxtAliasRegistrationTarget
   resolver: ModuleAliasResolver
   convexApiAlias: string
+  convexDataModelAlias: string
 }): void {
-  const { nuxt, resolver, convexApiAlias } = options
+  const { nuxt, resolver, convexApiAlias, convexDataModelAlias } = options
 
   nuxt.options.alias['#convex/api'] = convexApiAlias
+  // Types only: Convex generates `dataModel.d.ts` and no JavaScript file, so app code imports it
+  // with `import type`.
+  nuxt.options.alias['#convex/dataModel'] = convexDataModelAlias
   nuxt.options.alias['#convex/server'] = resolver.resolve('./runtime/server/index')
 }

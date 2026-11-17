@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { can } from '@lupinum/better-convex-functions/policy'
-import type { Id } from '~~/convex/_generated/dataModel'
 import { policy } from '~~/convex/policy'
 
 import { api } from '#convex/api'
+import type { Id } from '#convex/dataModel'
 
 const { status, client } = useConvexAuth()
 const route = useRoute()

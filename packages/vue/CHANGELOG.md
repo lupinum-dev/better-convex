@@ -1,5 +1,15 @@
 # @lupinum/better-convex-vue
 
+## 1.1.0
+
+### Minor Changes
+
+- [#361](https://github.com/lupinum-dev/better-convex/pull/361) [`9913cb8`](https://github.com/lupinum-dev/better-convex/commit/9913cb855a15df679fb25b5c7e12bfcdbd0dc017) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `why` and `fix` to failures, and the Convex request ID to `ConvexCallError`.
+  
+  `fail(code, message, { why, fix })` tells the caller why a call failed and what to do; `NOT_FOUND` and `FAILED` take no help.
+  `ConvexCallError` has `why`, `fix` and `requestId`. The request ID matches the Convex logs, so a user can quote it.
+  MCP tool failures carry the same `why` and `fix`.
+
 ## 1.0.2
 
 No changes in this release.

@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { api } from '#convex/api'
-import type { Id } from '~/convex/_generated/dataModel'
+import type { Id } from '#convex/dataModel'
 
 definePageMeta({
   layout: 'sidebar',

@@ -1,5 +1,34 @@
 # @lupinum/better-convex-functions
 
+## 0.2.0
+
+### Minor Changes
+
+- [#362](https://github.com/lupinum-dev/better-convex/pull/362) [`8109d3d`](https://github.com/lupinum-dev/better-convex/commit/8109d3d117771d145c59568ebeedf1a4ab5b02bc) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `defineFunctions({ observe: true })`: each call writes one JSON line with its action, actor, tenant, outcome, code and rows written, for a Convex log stream.
+  
+  Queries write a line only when they fail. `ctx.log.set` adds the app's own IDs to the line, and does nothing without `observe`.
+  One transaction writes one line: operations a query or mutation runs with `ctx.run*` write none of their own; the caller's line counts their rows and fields.
+  Agent tool calls write a line like other calls (a query tool only when it fails), also when the library refuses them; a request that waits for a person is `pending`, and the person's approve or decline writes the line of the work.
+  Migration: rename a job argument called `inner`; the name is now reserved.
+
+- [#364](https://github.com/lupinum-dev/better-convex/pull/364) [`55a0013`](https://github.com/lupinum-dev/better-convex/commit/55a0013383c81066ce21013655fe1887678a2ee9) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `trace` to call events: work that a call schedules or runs carries the call's trace ID, so one search finds the whole chain.
+  
+  Convex gives scheduled work a new request ID and no link to the call that scheduled it. With `observe`, the trace travels with the actor to internal operations, internal actions and jobs.
+  Downgrading below this version fails scheduled work that already carries a `trace`: older versions refuse the argument. Let it run first.
+  Migration: rename a job argument called `trace`; the name is now reserved.
+
+- [#361](https://github.com/lupinum-dev/better-convex/pull/361) [`9913cb8`](https://github.com/lupinum-dev/better-convex/commit/9913cb855a15df679fb25b5c7e12bfcdbd0dc017) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Add `why` and `fix` to failures, and the Convex request ID to `ConvexCallError`.
+  
+  `fail(code, message, { why, fix })` tells the caller why a call failed and what to do; `NOT_FOUND` and `FAILED` take no help.
+  `ConvexCallError` has `why`, `fix` and `requestId`. The request ID matches the Convex logs, so a user can quote it.
+  MCP tool failures carry the same `why` and `fix`.
+
+### Patch Changes
+
+- [#368](https://github.com/lupinum-dev/better-convex/pull/368) [`9053389`](https://github.com/lupinum-dev/better-convex/commit/905338951353c31037f1336edc2b0a771328f98d) Thanks [@Mat4m0](https://github.com/Mat4m0)! - Fix mutations without a `plan` that failed before their handler when an argument was a `v.int64()` value.
+  
+  The default plan summary now writes an int64 as its decimal string and `v.bytes()` values as their size (`"<2 bytes>"`).
+
 ## 0.1.0
 
 ### Minor Changes

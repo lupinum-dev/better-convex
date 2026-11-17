@@ -1,6 +1,13 @@
 import type { GenericEndpointContext } from '@better-auth/core'
 import { oauthProvider as createOAuthProvider } from '@better-auth/oauth-provider'
-import type { Auth, BetterAuthOptions, BetterAuthPlugin, InferAPI, User } from 'better-auth'
+import type {
+  Auth,
+  AuthContext,
+  BetterAuthOptions,
+  BetterAuthPlugin,
+  InferAPI,
+  User,
+} from 'better-auth'
 import { APIError, betterAuth } from 'better-auth'
 import {
   anonymous,
@@ -35,6 +42,12 @@ import {
   type AuthConfigSubCode,
 } from './diagnostics'
 import { createEmailCodeAddressLimitPlugin } from './email-code-limit'
+import {
+  createGuestSignInLimitPlugin,
+  GUEST_SIGN_IN_LIMIT_BOUNDS,
+  GUEST_SIGN_IN_LIMIT_DEFAULT,
+  type GuestSignInLimit,
+} from './guest-sign-in-limit'
 import {
   assertVerifiedUnlessPasswordSignUp,
   createIdentityGuardsPlugin,
@@ -99,7 +112,15 @@ type BetterConvexUserCreateDecision =
     }
 
 // Better Auth assigns the user id after this hook, so the pending user has none.
-type BetterConvexPendingUser = Readonly<Pick<User, 'email' | 'emailVerified' | 'image' | 'name'>>
+type BetterConvexPendingUser = Readonly<
+  Pick<User, 'email' | 'emailVerified' | 'image' | 'name'> & {
+    /**
+     * `true` for a guest that `experimental.anonymous` creates. A guest has a
+     * generated address that nobody proved. Always `false` without that option.
+     */
+    isAnonymous: boolean
+  }
+>
 
 const reviewedPasswordOptionKeys = [
   'disableSignUp',
@@ -142,7 +163,16 @@ type ReviewedAnonymousOptions = Pick<
   | 'disableDeleteAnonymousUser'
   | 'generateName'
   | 'generateRandomEmail'
->
+> & {
+  /**
+   * New guests per verified client address: a bucket of `max` that refills
+   * one every `window / max` seconds (not a fixed window). Default
+   * `{ window: 3600, max: 10 }`: 10, refilled one every 6 minutes. Better
+   * Auth's own 3 sign-ins per 10 seconds still apply on top. `window` is 60 to
+   * 86,400 seconds, `max` is 1 to 1,000.
+   */
+  readonly rateLimit?: GuestSignInLimit
+}
 
 const reviewedEmailOtpOptionKeys = [
   'allowedAttempts',
@@ -441,6 +471,23 @@ export interface BetterConvexAuth<
   readonly getAuth: (
     ctx: WritableAuthCtx<DataModel>,
   ) => Promise<{ readonly auth: AuthInstance; readonly headers: Headers }>
+  /**
+   * Delete another user from a Convex function: an admin removal, an erasure
+   * request, a guest cleanup. This is Better Auth's own user deletion, the one
+   * its `/delete-user` route runs: the user's sessions stop working at once,
+   * and the sessions, linked accounts and auth user are deleted with the app's
+   * `onDelete` triggers, so a user projection erases the app user. Sessions
+   * after the first 64 are deleted later, without `onDelete` triggers. A user
+   * that does not exist is not an error.
+   *
+   * It checks no permission. Call it from an internal function, after your
+   * own check of who may delete whom; never pass a user ID from the browser
+   * without that check. It works without `deleteUser.enabled` and does not run
+   * `deleteUser.beforeDelete`, the fresh-session check or the `delete-account`
+   * email. In a mutation it is one transaction; in an action each step is its
+   * own transaction, and calling it again finishes a deletion that stopped.
+   */
+  readonly deleteUser: (ctx: WritableAuthCtx<DataModel>, userId: string) => Promise<void>
   /**
    * The access verifier for `handleMcpRequest`: keys from the component, the
    * strict token checks, and one live grant query per token. With `oauth.mcp`,
@@ -781,9 +828,11 @@ function rejectUnsupportedOptions(options: object): ResolvedOidcConfig | undefin
           'disableDeleteAnonymousUser',
           'generateName',
           'generateRandomEmail',
+          'rateLimit',
         ],
         'experimental.anonymous',
       )
+      if (guest.rateLimit !== undefined) assertGuestSignInLimit(guest.rateLimit)
       for (const key of ['onLinkAccount', 'generateName', 'generateRandomEmail']) {
         if (guest[key] !== undefined && typeof guest[key] !== 'function')
           throw configError(`expected "experimental.anonymous.${key}" to be a function`)
@@ -981,6 +1030,22 @@ function oidcSignInHook<DataModel extends GenericDataModel>(
   }
 }
 
+function assertGuestSignInLimit(value: unknown): void {
+  if (!isPlainRecord(value)) {
+    throw configError('expected "experimental.anonymous.rateLimit" to be { window, max }')
+  }
+  assertOnlyKeys(value, ['window', 'max'], 'experimental.anonymous.rateLimit')
+  for (const key of ['window', 'max'] as const) {
+    const { min, max } = GUEST_SIGN_IN_LIMIT_BOUNDS[key]
+    const field = value[key]
+    if (!Number.isSafeInteger(field) || (field as number) < min || (field as number) > max) {
+      throw configError(
+        `expected "experimental.anonymous.rateLimit.${key}" to be a whole number from ${min} to ${max}`,
+      )
+    }
+  }
+}
+
 function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
   ctx: AuthCtx<DataModel>,
   callback: NonNullable<CreateBetterConvexAuthOptions<DataModel>['beforeUserCreate']>,
@@ -995,6 +1060,7 @@ function createBeforeUserCreateHook<DataModel extends GenericDataModel>(
           emailVerified: user.emailVerified,
           image: user.image,
           name: user.name,
+          isAnonymous: user.isAnonymous === true,
         }),
       })
     } catch (error) {
@@ -1072,6 +1138,14 @@ function emailCredentials(message: BetterConvexAuthEmail): string[] {
       return [message.invitationId]
     case 'delete-account':
       return [message.url, message.token]
+  }
+}
+
+/** Local development with an `email` hook: log the mail, then hand it to the hook. */
+function withDevOutbox(appDeliver: (message: BetterConvexAuthEmail) => Promise<void>) {
+  return async (message: BetterConvexAuthEmail): Promise<void> => {
+    await devOutbox(message)
+    await appDeliver(message)
   }
 }
 
@@ -1308,9 +1382,15 @@ export function createBetterConvexAuthOwned<
           })
         : undefined
       stage = 'AUTH_CONFIG_OPTIONS_INVALID'
-      // The app's hook; else the dev outbox on a loopback SITE_URL; else a delivery that fails with a clear error.
+      // The app's hook; else a delivery that fails with a clear error. On a loopback SITE_URL the
+      // dev outbox also logs each mail, before the hook runs, so local work shows the code even
+      // when the hook only queues it or has no provider key.
       const appDeliver = options.email ? createEmailDelivery(ctx, options.email) : undefined
-      const deliver = appDeliver ?? (localDevelopment ? devOutbox : missingEmailHook)
+      const deliver = localDevelopment
+        ? appDeliver
+          ? withDevOutbox(appDeliver)
+          : devOutbox
+        : (appDeliver ?? missingEmailHook)
       const emailAndPassword = options.emailAndPassword
       const { passwordReset = false, ...passwordOptions } = emailAndPassword || {}
       const emailOtpOptions = options.emailOTP
@@ -1319,8 +1399,13 @@ export function createBetterConvexAuthOwned<
         ? createBeforeUserCreateHook(ctx, options.beforeUserCreate)
         : undefined
       const guestOptions = options.experimental?.anonymous
+      const { rateLimit: guestLimit = GUEST_SIGN_IN_LIMIT_DEFAULT, ...anonymousOptions } =
+        guestOptions === undefined || guestOptions === true ? {} : guestOptions
       const featurePlugins = [
-        guestOptions === undefined ? null : anonymous(guestOptions === true ? {} : guestOptions),
+        guestOptions === undefined ? null : anonymous(anonymousOptions),
+        guestOptions === undefined
+          ? null
+          : createGuestSignInLimitPlugin(guestLimit, () => rateLimitStorage.consume),
         options.organization === false || options.organization === undefined
           ? null
           : organization({
@@ -1546,7 +1631,7 @@ export function createBetterConvexAuthOwned<
                 ...(appDeliver
                   ? {
                       sendDeleteAccountVerification: async ({ user, url, token }) =>
-                        appDeliver({
+                        deliver({
                           type: 'delete-account',
                           to: user.email,
                           url,
@@ -1672,6 +1757,19 @@ export function createBetterConvexAuthOwned<
     getUser,
     requireUser,
     getAuth: (ctx: WritableAuthCtx<DataModel>) => authComponent.getAuth(createAuth, ctx),
+    deleteUser: async (ctx: WritableAuthCtx<DataModel>, userId: string) => {
+      if (!isWritableAuthCtx(ctx)) throw new Error('AUTH_DELETE_USER_REQUIRES_WRITABLE_CONTEXT')
+      if (typeof userId !== 'string' || userId.length === 0) {
+        throw new TypeError('AUTH_DELETE_USER_ID_INVALID')
+      }
+      // The public instance types `$context` as unknown. Checked against Better Auth 1.7.16:
+      // it resolves to its AuthContext, and `internalAdapter.deleteUser` is the deletion that
+      // `/delete-user` runs, through this library's adapter and trigger handles.
+      const context = (await (
+        await createAuth(ctx)
+      ).$context) as Pick<AuthContext, 'internalAdapter'>
+      await context.internalAdapter.deleteUser(userId)
+    },
     createMcpAccessVerifier,
     mcpAuthorization(ctx: AuthCtx<DataModel>): BetterConvexMcpAuthorization {
       const profile = requireMcp()

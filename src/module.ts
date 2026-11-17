@@ -355,7 +355,12 @@ export default defineNuxtModule<ModuleOptions>({
     }
     // A deploy can still supply NUXT_PUBLIC_CONVEX_URL at runtime, so warn, not fail.
     if (!convexConfig.url) logger.warn(MISSING_CONVEX_URL_MESSAGE)
-    registerConvexAliases({ nuxt, resolver, convexApiAlias })
+    registerConvexAliases({
+      nuxt,
+      resolver,
+      convexApiAlias,
+      convexDataModelAlias: resolver.resolve(nuxt.options.rootDir, 'convex/_generated/dataModel'),
+    })
     // Nuxt 4.6.0/4.6.1 (nuxt/nuxt#36309 with nitropack 2.13.4) inline `convex/browser` into the
     // server build with a broken import path, so SSR pages that load Convex answer 500. Remove
     // this when the lowest supported Nuxt bundles `convex` correctly without it. It must be a

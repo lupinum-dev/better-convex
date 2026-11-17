@@ -13,6 +13,7 @@ import { eventAbortSignal, eventRequestHeaders, type ConvexServerEvent } from '.
 import { resolveRequestAuthSnapshot } from './request-auth'
 import { readServerConvexConfig } from './server-config'
 import {
+  ServerConvexValidationError,
   validateServerConvexOptions,
   type NormalizedServerConvexOptions,
   type ServerConvexOptions,
@@ -45,6 +46,31 @@ export interface ServerConvexCaller {
     action: Action,
     ...args: OptionalRestArgs<Action>
   ): Promise<FunctionReturnType<Action>>
+  /**
+   * `GET` or `HEAD` one path of the deployment's Convex HTTP actions host, as
+   * the caller: the token goes in `Authorization: Bearer`. Resolves with the
+   * upstream `Response` for every status, its body unread and not capped by
+   * `server.maxResponseBytes`. A redirect is returned, not followed, so the
+   * token never reaches another host. The request aborts with the event.
+   */
+  fetch(path: string, init?: { readonly method?: 'GET' | 'HEAD' }): Promise<Response>
+}
+
+// One path on the HTTP actions host, with an optional query string: a single leading `/`,
+// no `\`, `#`, whitespace or control characters. The URL parser drops tabs and newlines, so
+// `/\t/host` would otherwise become the protocol-relative `//host`.
+// eslint-disable-next-line no-control-regex
+const HTTP_ACTION_PATH = /^\/(?![/\\])[^\\\s\x00-\x1F\x7F#]*$/u
+
+function httpActionUrl(siteUrl: string, path: unknown): URL {
+  const base = new URL(siteUrl)
+  const url = typeof path === 'string' && HTTP_ACTION_PATH.test(path) ? new URL(path, base) : null
+  if (!url || url.origin !== base.origin) {
+    throw new ServerConvexValidationError(
+      'serverConvex fetch accepts only a path that starts with one "/", such as "/files/abc"',
+    )
+  }
+  return url
 }
 
 function readRequiredConvexUrl(url: string | undefined): string {
@@ -243,8 +269,48 @@ export function serverConvex(
     }
   }
 
+  const fetchHttpAction = async (
+    path: string,
+    init: { readonly method?: 'GET' | 'HEAD' } = {},
+  ): Promise<Response> => {
+    const method = init.method ?? 'GET'
+    // This is not a general HTTP client: only reads of the deployment's own HTTP actions.
+    if (method !== 'GET' && method !== 'HEAD') {
+      throw new ServerConvexValidationError('serverConvex fetch accepts only GET and HEAD')
+    }
+    const { siteUrl } = readServerConvexConfig()
+    if (!siteUrl) {
+      throw new ConvexCallError({
+        kind: 'unknown',
+        code: 'SITE_URL_MISSING',
+        message: 'The Convex HTTP actions URL is not configured for serverConvex fetch',
+      })
+    }
+    const url = httpActionUrl(siteUrl, path)
+    const token = await getToken()
+    if (normalized.auth === 'required' && !token) throw authenticationRequiredError()
+    const signal = eventAbortSignal(event)
+    try {
+      return await fetch(url, {
+        method,
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        redirect: 'manual',
+        ...(signal ? { signal } : {}),
+      })
+    } catch {
+      throw new ConvexCallError({
+        kind: 'transport',
+        code: signal?.aborted ? 'CANCELLED' : 'NETWORK_ERROR',
+        message: signal?.aborted
+          ? 'Convex HTTP action request was aborted'
+          : 'Convex HTTP action request could not complete',
+      })
+    }
+  }
+
   return {
     getToken,
+    fetch: fetchHttpAction,
     query(query, ...args) {
       return call(
         query,

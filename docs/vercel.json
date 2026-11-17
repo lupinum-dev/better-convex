@@ -2,6 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nuxtjs",
   "buildCommand": "pnpm build",
+  "git": {
+    "deploymentEnabled": {
+      "renovate/**": false,
+      "changeset-release/**": false
+    }
+  },
   "ignoreCommand": "node scripts/vercel-ignore.mjs",
   "outputDirectory": null
 }
