@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Id } from '~~/convex/_generated/dataModel'
+import type { Id } from '#convex/dataModel'
 
 type ProjectSummary = {
   _id: Id<'projects'>

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import type { Id } from '~~/convex/_generated/dataModel'
-
 import { api } from '#convex/api'
+import type { Id } from '#convex/dataModel'
 
 defineOptions({ name: 'AgencyPage' })
 
