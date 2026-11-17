@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { Id } from '~~/convex/_generated/dataModel'
 import { renameProjectInputSchema } from '~~/shared/inputSchemas'
 
 import { api } from '#convex/api'
+import type { Id } from '#convex/dataModel'
 
 const props = defineProps<{
   teamId: string
