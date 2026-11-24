@@ -28,7 +28,9 @@ if (previousSha && previousSha === sha) process.exit(1)
 let range
 if (previousSha) {
   if (!hasCommit(previousSha)) git('fetch', '--no-tags', '--depth=1', 'origin', previousSha)
-  if (hasCommit(previousSha)) range = [previousSha, 'HEAD']
+  // The last build may hold a change that this push took back, so main cannot stand in for it.
+  if (!hasCommit(previousSha)) process.exit(1)
+  range = [previousSha, 'HEAD']
 }
 if (!range) {
   // main has nothing else to compare with.
