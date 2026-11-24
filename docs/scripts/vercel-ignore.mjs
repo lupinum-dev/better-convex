@@ -1,35 +1,47 @@
 // Vercel "Ignored Build Step": exit 0 skips the build, exit 1 builds.
-// The docs site only reads files under docs/, so we build only when docs/ changed.
-// Vercel clones shallowly, so the commit we compare against is often missing from the
-// clone (new branches, force-pushed release branches). We fetch it instead of building
-// blindly; if git still cannot answer, we build to stay safe.
+// In vercel.json: "ignoreCommand": "node scripts/vercel-ignore.mjs <paths that feed the site>"
+// Paths are git pathspecs relative to the Root Directory, for example `. ../pnpm-lock.yaml`.
+//
+// We build only when those paths changed since the commit Vercel last built for this branch
+// (VERCEL_GIT_PREVIOUS_SHA). A branch without an earlier build is compared with main, so its
+// first push is judged too. Vercel clones shallowly, so the commit to compare with is often
+// missing from the clone; we fetch it instead of building blindly. If git still cannot
+// answer, we build to stay safe.
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
 
-const root = resolve(import.meta.dirname, '../..')
-const git = (...args) => spawnSync('git', args, { cwd: root, stdio: 'ignore' }).status ?? 1
-const hasCommit = (ref) => git('cat-file', '-e', `${ref}^{commit}`) === 0
+const paths = process.argv.slice(2)
+const git = (...args) => spawnSync('git', args, { stdio: 'ignore' }).status ?? 1
+const {
+  VERCEL_GIT_COMMIT_REF: branch,
+  VERCEL_GIT_COMMIT_SHA: sha,
+  VERCEL_GIT_PREVIOUS_SHA: previousSha,
+} = process.env
 
-const branch = process.env.VERCEL_GIT_COMMIT_REF
-const previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA
+function hasCommit(ref) {
+  return git('cat-file', '-e', `${ref}^{commit}`) === 0
+}
 
-// Production: compare with the last deployed commit on main.
-// Preview: compare with main, so the first push of a branch is judged too.
+if (!paths.length || !branch) process.exit(1)
+// Same commit as the last deployment: a deliberate redeploy (new env values), so build.
+if (previousSha && previousSha === sha) process.exit(1)
+
 let range
-if (branch === 'main') {
-  if (!previousSha) process.exit(1)
+if (previousSha) {
   if (!hasCommit(previousSha)) git('fetch', '--no-tags', '--depth=1', 'origin', previousSha)
+  // The last build may hold a change that this push took back, so main cannot stand in for it.
   if (!hasCommit(previousSha)) process.exit(1)
   range = [previousSha, 'HEAD']
-} else {
+}
+if (!range) {
+  // main has nothing else to compare with.
+  if (branch === 'main') process.exit(1)
   git('fetch', '--no-tags', '--depth=200', 'origin', '+refs/heads/main:refs/remotes/origin/main')
   // Three-dot diff (only the branch's own changes) needs the fork point in the clone.
   git('fetch', '--no-tags', '--deepen=200', 'origin', branch)
-  // Without the fork point, comparing the two tips could hide a docs change, so build.
+  // Without the fork point, comparing the two tips could hide a change, so build.
   if (git('merge-base', 'origin/main', 'HEAD') !== 0) process.exit(1)
   range = ['origin/main...HEAD']
 }
 
-const status = git('diff', '--quiet', ...range, '--', 'docs')
 // git diff --quiet: 0 = no changes (skip), 1 = changes (build), other = error (build).
-process.exit(status === 0 ? 0 : 1)
+process.exit(git('diff', '--quiet', ...range, '--', ...paths) === 0 ? 0 : 1)
