@@ -5,9 +5,10 @@
   "git": {
     "deploymentEnabled": {
       "renovate/**": false,
-      "changeset-release/**": false
+      "changeset-release/**": false,
+      "ci/**": false
     }
   },
-  "ignoreCommand": "node scripts/vercel-ignore.mjs",
+  "ignoreCommand": "node scripts/vercel-ignore.mjs .",
   "outputDirectory": null
 }
